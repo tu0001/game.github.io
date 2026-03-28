@@ -13,7 +13,7 @@
             position: fixed;
             top: 0;
             left: 0;
-            background: #0a0620; /* fallback, will be covered by canvas */
+            background: #0a0620;
         }
         .game-container {
             position: fixed;
@@ -38,9 +38,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            /* 关键修复：object-fit contain 会留黑边，改为 cover 保证铺满，但会裁剪；
-               游戏逻辑基于固定分辨率 1440x810，我们使用背景拉伸/平铺保证无黑边 */
-            object-fit: fill;
+            object-fit: contain;   /* 保持比例，无拉伸，但会留黑边——我们通过背景铺满解决 */
             background: #0a0620;
         }
         /* 其余样式保持不变 */
@@ -110,7 +108,7 @@
 
 <script>
 (function(){
-    // ---------- 固定逻辑分辨率（游戏世界尺寸，不拉伸玩法） ----------
+    // 固定逻辑分辨率 1440x810 (9:16 竖屏比例, 实际横屏游戏会左右留黑边，但背景自己循环填充)
     const LOGIC_W = 1440;
     const LOGIC_H = 810;
     const GROUND_Y = 540;
@@ -118,15 +116,15 @@
     const GENERATE_AHEAD = 400;
     const DELETE_BEHIND = 600;
     
-    // 获取画布并强制设置为逻辑尺寸（保持内部坐标不变，通过CSS铺满）
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    // 设置画布实际像素尺寸为逻辑分辨率，不缩放（避免模糊）
     canvas.width = LOGIC_W;
     canvas.height = LOGIC_H;
-    // CSS 保证铺满屏幕且无黑边，同时内部绘制基于固定分辨率
+    // 通过CSS使画布在屏幕上居中并保持比例，黑边由我们自己的背景绘制来填充
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    canvas.style.objectFit = 'fill';  // 关键：拉伸填满，无黑边
+    canvas.style.objectFit = 'contain';
     
     const startOverlay = document.getElementById('startOverlay');
     const startBtn = document.getElementById('startBtn');
@@ -273,7 +271,6 @@
     checkLandscapeAndFullscreen(); setInterval(checkLandscapeAndFullscreen, 500);
     canvas.addEventListener('click', () => { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); });
     
-    // 输入控制
     let input = { left: false, right: false, jump: false };
     const leftBtn = document.querySelector('.left-btn'), rightBtn = document.querySelector('.right-btn'), jumpBtn = document.querySelector('.jump-btn');
     function attach(btn, key){ if(!btn) return; btn.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('button'); input[key]=true; }, {passive:false}); btn.addEventListener('touchend', (e)=>{ e.preventDefault(); input[key]=false; }); btn.addEventListener('mousedown', ()=>{ playSound('button'); input[key]=true; }); btn.addEventListener('mouseup', ()=>{ input[key]=false; }); btn.addEventListener('mouseleave', ()=>{ input[key]=false; }); }
@@ -461,14 +458,14 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // 关键修复：背景与地面绘制，完全无缝、无紫色接缝、无黑边
+    // 背景和地面循环：完全平铺逻辑画布，无黑边无接缝
     function drawBackground() {
-        let bgWidth = bgImg.width || 1440;
-        let groundWidth = groundImg.width || 1440;
+        let bgWidth = bgImg.width || LOGIC_W;
+        let groundWidth = groundImg.width || LOGIC_W;
         let bgOffset = (cameraX * 0.3) % bgWidth;
         let groundOffset = cameraX % groundWidth;
         
-        // 远景背景：填满整个逻辑画布 (0,0,LOGIC_W,LOGIC_H)
+        // 远景背景覆盖整个画布
         if(bgImg.complete && bgImg.naturalWidth > 0) {
             ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H);
             if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H);
@@ -476,12 +473,12 @@
             drawStarField();
         }
         
-        // 近景地面：从 GROUND_Y 开始，高度 = LOGIC_H - GROUND_Y，完美覆盖底部，消除紫色接缝
+        // 近景地面：从 GROUND_Y 开始，高度覆盖到画布底部，彻底消除紫色接缝
         if(groundImg.complete && groundImg.naturalWidth > 0) {
             ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
             if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
         } else {
-            ctx.fillStyle = "#8B5A6B";
+            ctx.fillStyle = "#5A4A3A";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
         }
     }
