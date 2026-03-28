@@ -7,10 +7,10 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
         html, body { width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0; background: #0a0620; }
-        .game-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0620; }
-        .canvas-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
-        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0a0620; }
-        /* 其他样式保持不变 */
+        .game-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; position: relative; }
+        .canvas-area { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
+        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0822; }
+        /* 其余样式保持不变 */
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
         .loading-bar-container { width: 280px; height: 24px; background: rgba(0,0,0,0.5); border-radius: 30px; overflow: hidden; border: 2px solid #ffccaa; }
@@ -77,21 +77,8 @@
 
 <script>
 (function(){
-    const LOGIC_W = 1440;
-    const LOGIC_H = 810;
-    const GROUND_Y = 540;
-    const CHUNK_WIDTH = 900;
-    const GENERATE_AHEAD = 400;
-    const DELETE_BEHIND = 600;
-    
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = LOGIC_W;
-    canvas.height = LOGIC_H;
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.objectFit = 'contain';
-    
     const startOverlay = document.getElementById('startOverlay');
     const startBtn = document.getElementById('startBtn');
     const deathOverlay = document.getElementById('deathOverlay');
@@ -106,6 +93,13 @@
     const bottomControls = document.getElementById('bottomControls');
     const musicToggleBtn = document.getElementById('musicToggleBtn');
     const itemTimerBar = document.getElementById('itemTimerBar');
+    
+    const LOGIC_W = 1440;
+    const LOGIC_H = 810;
+    const GROUND_Y = 540;
+    const CHUNK_WIDTH = 900;
+    const GENERATE_AHEAD = 400;
+    const DELETE_BEHIND = 600;
     
     let gameRunning = false;
     let musicMuted = false;
@@ -236,6 +230,8 @@
     function checkLandscapeAndFullscreen() { if(window.matchMedia("(orientation: landscape)").matches) { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); fullscreenTip.classList.add('fade-out'); setTimeout(() => fullscreenTip.style.display = 'none', 500); } else { fullscreenTip.classList.remove('fade-out'); fullscreenTip.style.display = 'block'; } }
     checkLandscapeAndFullscreen(); setInterval(checkLandscapeAndFullscreen, 500);
     canvas.addEventListener('click', () => { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); });
+    function resizeCanvas() { canvas.width = LOGIC_W; canvas.height = LOGIC_H; }
+    window.addEventListener('resize', resizeCanvas); resizeCanvas();
     
     let input = { left: false, right: false, jump: false };
     const leftBtn = document.querySelector('.left-btn'), rightBtn = document.querySelector('.right-btn'), jumpBtn = document.querySelector('.jump-btn');
@@ -295,9 +291,12 @@
         let endX = startX + CHUNK_WIDTH;
         platforms.push({ x: startX, y: GROUND_Y, w: CHUNK_WIDTH, h: 40, type: "ground" });
         if(Math.random() < 0.3) { let platformY = 380 + Math.random() * 120; platforms.push({ x: startX + 100 + Math.random() * 200, y: platformY, w: 80, h: 20, type: "platform" }); }
+        
         let starCount = 2 + Math.floor(Math.random() * 4);
         for(let i = 0; i < starCount; i++) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let sx = startX + 60 + Math.random() * (CHUNK_WIDTH - 120), sy = GROUND_Y - 40 - Math.random() * 80; if(!isPositionOverlappingStar(sx, sy)) { stars.push({ x: sx, y: sy, collected: false }); placed = true; } attempts++; } if(!placed) stars.push({ x: startX + 80 + i*70, y: GROUND_Y - 50, collected: false }); }
+        
         if(Math.random() < 0.25) { let pitCount = 1 + Math.floor(Math.random() * 2); for(let i = 0; i < pitCount; i++) { lavaPits.push({ x: startX + 60 + Math.random() * (CHUNK_WIDTH - 120), y: GROUND_Y - 15, w: 40 + Math.random() * 30, h: 20, type: "lava", particles: [] }); } }
+        
         let trapChance = 0.25 + (score / 8000);
         let trapCount = 0;
         let trapPositions = [];
@@ -312,8 +311,11 @@
                 trapCount++;
             }
         }
+        
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let qx = startX + 60 + Math.random() * (CHUNK_WIDTH - 120), qy = GROUND_Y - 80; if(!traps.some(t => Math.abs(t.x - qx) < 50)) { questionBlocks.push({ x: qx, y: qy, w: 60, h: 60, type: "questionBlock" }); placed = true; } attempts++; } if(!placed) questionBlocks.push({ x: startX + 150, y: GROUND_Y - 80, w: 60, h: 60, type: "questionBlock" }); }
+        
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let mx = startX + 80 + Math.random() * (CHUNK_WIDTH - 160), my = GROUND_Y - 70; if(!traps.some(t => Math.abs(t.x - mx) < 50)) { moonBlocks.push({ x: mx, y: my, w: 60, h: 60, type: "moonBlock" }); placed = true; } attempts++; } if(!placed) moonBlocks.push({ x: startX + 200, y: GROUND_Y - 70, w: 60, h: 60, type: "moonBlock" }); }
+        
         if(Math.random() < 0.3) { movingPlatforms.push({ x: startX + 150 + Math.random() * 200, y: 300 + Math.random() * 200, w: 100, h: 20, range: 100 + Math.random() * 60, speed: 0.8 + Math.random() * 0.8, startX: startX + 150 + Math.random() * 200, currentX: 0, vx: 0 }); }
         if(Math.random() < 0.25) { springboards.push({ x: startX + 60 + Math.random() * (CHUNK_WIDTH - 120), y: GROUND_Y - 20, w: 50, h: 12, type: "springboard", bouncePower: -18 }); }
         return endX;
@@ -335,6 +337,7 @@
         player.vy += player.gravity * gameSpeed;
         player.y += player.vy * gameSpeed;
         player.onGround = false;
+        
         for(let plat of platforms) {
             let rect = {x:plat.x, y:plat.y, w:plat.w, h:plat.h};
             let pRect = {x:player.x, y:player.y, w:player.w, h:player.h};
@@ -372,6 +375,7 @@
                 playSound('spring', 0.14);
             }
         }
+        
         if(activeBuffs.fly.active) { if(input.jump) player.vy = -5 * gameSpeed; player.vy += 0.2 * gameSpeed; }
         if(input.jump && !activeBuffs.fly.active) {
             if(player.onGround) { player.vy = player.jumpPower; player.onGround = false; input.jump = false; playSound('jump', 0.1); }
@@ -424,29 +428,45 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // 关键：背景和地面无缝循环平铺，不留任何缝隙
+    // ==================== 彻底重写的背景/地面循环平铺 ====================
     function drawBackground() {
-        let bgWidth = bgImg.width || LOGIC_W;
-        let groundWidth = groundImg.width || LOGIC_W;
-        let bgOffset = (cameraX * 0.3) % bgWidth;
-        let groundOffset = cameraX % groundWidth;
+        // 获取图片实际宽度，如果未加载则使用逻辑宽度
+        const bgW = bgImg.width > 0 ? bgImg.width : LOGIC_W;
+        const groundW = groundImg.width > 0 ? groundImg.width : LOGIC_W;
         
-        // 远景背景完整覆盖画布
-        if(bgImg.complete && bgImg.naturalWidth > 0) {
-            ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H);
-            if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H);
+        // 远景背景滚动速度较慢
+        const bgOffsetX = (cameraX * 0.3) % bgW;
+        // 近景地面滚动速度与相机同步
+        const groundOffsetX = cameraX % groundW;
+        
+        // 绘制远景背景：左右各一张，覆盖整个画布宽度
+        if (bgImg.complete && bgImg.naturalWidth > 0) {
+            // 第一张（左）
+            ctx.drawImage(bgImg, -bgOffsetX, 0, LOGIC_W, LOGIC_H);
+            // 第二张（右），当偏移不为0时补充右边空缺
+            if (bgOffsetX > 0) {
+                ctx.drawImage(bgImg, bgW - bgOffsetX, 0, LOGIC_W, LOGIC_H);
+            }
         } else {
+            // 后备星空
             drawStarField();
         }
         
-        // 近景地面：从 GROUND_Y 一直画到画布底部，确保没有紫色空隙
-        if(groundImg.complete && groundImg.naturalWidth > 0) {
+        // 绘制近景地面：从 GROUND_Y 开始，高度为 LOGIC_H - GROUND_Y，覆盖底部
+        if (groundImg.complete && groundImg.naturalWidth > 0) {
             const groundHeight = LOGIC_H - GROUND_Y;
-            ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, groundHeight);
-            if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, groundHeight);
+            // 第一块地面
+            ctx.drawImage(groundImg, -groundOffsetX, GROUND_Y, LOGIC_W, groundHeight);
+            // 第二块地面，用于无缝衔接
+            if (groundOffsetX > 0) {
+                ctx.drawImage(groundImg, groundW - groundOffsetX, GROUND_Y, LOGIC_W, groundHeight);
+            }
         } else {
-            ctx.fillStyle = "#6B4C3B";
+            // 后备纯色地面
+            ctx.fillStyle = "#8B5A6B";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
+            ctx.fillStyle = "#D4BC7A";
+            ctx.fillRect(0, GROUND_Y + (LOGIC_H - GROUND_Y) - 20, LOGIC_W, 20);
         }
     }
     
@@ -458,15 +478,17 @@
     function drawSpringboards() { for(let sb of springboards) { ctx.fillStyle = "#FFAA44"; ctx.fillRect(sb.x - cameraX, sb.y, sb.w, sb.h); ctx.fillStyle = "#FFDD88"; ctx.fillRect(sb.x - cameraX + 4, sb.y - 3, sb.w - 8, 4); ctx.fillStyle = "#FF8844"; ctx.fillRect(sb.x - cameraX + 2, sb.y + 2, sb.w - 4, 3); } }
     function drawQuestionBlocks() { for(let q of questionBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(q.x-cameraX, q.y, q.w, q.h); ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 36px monospace"; ctx.textAlign = "center"; ctx.fillText("?", q.x-cameraX+q.w/2, q.y+q.h/2+8); ctx.textAlign = "left"; } }
     
+    // 修正玩家绘制：严格保持比例，不拉伸
     function drawPlayer() {
         ctx.save();
         ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2);
-        if(player.facingRight) ctx.scale(-1, 1);
+        if (player.facingRight) ctx.scale(-1, 1);
         let img = (input.left || input.right) ? playerWalkImg : playerStandImg;
-        if(img && img.complete && img.naturalWidth > 0) {
-            // 严格按照原始宽高比绘制，不拉伸
+        if (img && img.complete && img.naturalWidth > 0) {
+            // 按原始宽高绘制，不做额外缩放
             ctx.drawImage(img, -player.w/2, -player.h/2, player.w, player.h);
         } else {
+            // 后备图形
             ctx.fillStyle = "#FFD8A0";
             ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
             ctx.fillStyle = "#F0A87A";
