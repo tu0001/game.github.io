@@ -9,7 +9,8 @@
         html, body { width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0; background: #0a0620; }
         .game-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; position: relative; }
         .canvas-area { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
-        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: cover; background: #0b0822; }
+        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0822; }
+        /* 其余样式保持不变 */
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
         .loading-bar-container { width: 280px; height: 24px; background: rgba(0,0,0,0.5); border-radius: 30px; overflow: hidden; border: 2px solid #ffccaa; }
@@ -119,7 +120,6 @@
     let lavaPits = [];
     let springboards = [];
     
-    // 属性提升：速度 +10%，跳跃力 +15%
     let player = {
         x: 200, y: GROUND_Y - 68, w: 52, h: 68,
         vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88,
@@ -287,7 +287,6 @@
     
     function isPositionOverlappingStar(x, y) { for(let s of stars) { if(Math.abs(s.x - x) < 40 && Math.abs(s.y - y) < 40) return true; } return false; }
     
-    // 陷阱生成限制：同一块内最多2个陷阱，且彼此间距不小于150px
     function generateChunk(startX) {
         let endX = startX + CHUNK_WIDTH;
         platforms.push({ x: startX, y: GROUND_Y, w: CHUNK_WIDTH, h: 40, type: "ground" });
@@ -298,7 +297,6 @@
         
         if(Math.random() < 0.25) { let pitCount = 1 + Math.floor(Math.random() * 2); for(let i = 0; i < pitCount; i++) { lavaPits.push({ x: startX + 60 + Math.random() * (CHUNK_WIDTH - 120), y: GROUND_Y - 15, w: 40 + Math.random() * 30, h: 20, type: "lava", particles: [] }); } }
         
-        // 陷阱限制：最多2个，间距至少150px，且不与问号块/月亮方块重叠
         let trapChance = 0.25 + (score / 8000);
         let trapCount = 0;
         let trapPositions = [];
@@ -314,10 +312,8 @@
             }
         }
         
-        // 问号块避开陷阱
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let qx = startX + 60 + Math.random() * (CHUNK_WIDTH - 120), qy = GROUND_Y - 80; if(!traps.some(t => Math.abs(t.x - qx) < 50)) { questionBlocks.push({ x: qx, y: qy, w: 60, h: 60, type: "questionBlock" }); placed = true; } attempts++; } if(!placed) questionBlocks.push({ x: startX + 150, y: GROUND_Y - 80, w: 60, h: 60, type: "questionBlock" }); }
         
-        // 月亮方块避开陷阱
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let mx = startX + 80 + Math.random() * (CHUNK_WIDTH - 160), my = GROUND_Y - 70; if(!traps.some(t => Math.abs(t.x - mx) < 50)) { moonBlocks.push({ x: mx, y: my, w: 60, h: 60, type: "moonBlock" }); placed = true; } attempts++; } if(!placed) moonBlocks.push({ x: startX + 200, y: GROUND_Y - 70, w: 60, h: 60, type: "moonBlock" }); }
         
         if(Math.random() < 0.3) { movingPlatforms.push({ x: startX + 150 + Math.random() * 200, y: 300 + Math.random() * 200, w: 100, h: 20, range: 100 + Math.random() * 60, speed: 0.8 + Math.random() * 0.8, startX: startX + 150 + Math.random() * 200, currentX: 0, vx: 0 }); }
@@ -432,11 +428,31 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
+    // 修正背景绘制：循环平铺，无黑边，无紫色接缝
     function drawBackground() {
-        let bgWidth = bgImg.width || 1440, groundWidth = groundImg.width || 1440;
-        let bgOffset = (cameraX * 0.3) % bgWidth, groundOffset = cameraX % groundWidth;
-        if(bgImg.complete && bgImg.naturalWidth > 0) { ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H); if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H); } else drawStarField();
-        if(groundImg.complete && groundImg.naturalWidth > 0) { ctx.drawImage(groundImg, -groundOffset, GROUND_Y - 20, LOGIC_W, 270); if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y - 20, LOGIC_W, 270); } else { ctx.fillStyle = "#E8D4A8"; ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y); ctx.fillStyle = "#D4BC7A"; ctx.fillRect(0, GROUND_Y + 40, LOGIC_W, 20); }
+        let bgWidth = bgImg.width || 1440;
+        let groundWidth = groundImg.width || 1440;
+        let bgOffset = (cameraX * 0.3) % bgWidth;
+        let groundOffset = cameraX % groundWidth;
+        
+        // 远景背景：平铺填满整个画布
+        if(bgImg.complete && bgImg.naturalWidth > 0) {
+            ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H);
+            if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H);
+        } else {
+            drawStarField();
+        }
+        
+        // 近景地面：从 GROUND_Y 开始，高度填满底部，完全覆盖紫色区域
+        if(groundImg.complete && groundImg.naturalWidth > 0) {
+            ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
+            if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
+        } else {
+            ctx.fillStyle = "#E8D4A8";
+            ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
+            ctx.fillStyle = "#D4BC7A";
+            ctx.fillRect(0, GROUND_Y + (LOGIC_H - GROUND_Y) - 20, LOGIC_W, 20);
+        }
     }
     
     function drawLavaPits() { for(let lava of lavaPits) { let grad = ctx.createLinearGradient(lava.x - cameraX, lava.y, lava.x - cameraX + lava.w, lava.y + lava.h); grad.addColorStop(0, "#FF4500"); grad.addColorStop(0.5, "#FF6600"); grad.addColorStop(1, "#FF2200"); ctx.fillStyle = grad; ctx.fillRect(lava.x - cameraX, lava.y, lava.w, lava.h); ctx.fillStyle = "#FFAA55"; ctx.fillRect(lava.x - cameraX, lava.y, lava.w, 2); for(let p of lava.particles) { ctx.fillStyle = `rgba(255, 100, 0, ${p.life * 0.8})`; ctx.beginPath(); ctx.arc(p.x - cameraX, p.y, p.size, 0, Math.PI*2); ctx.fill(); } } }
