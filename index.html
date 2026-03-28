@@ -6,42 +6,11 @@
     <title>超时空辉夜姬 | 无限跑酷</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            position: fixed;
-            top: 0;
-            left: 0;
-            background: #0a0620;
-        }
-        .game-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #0a0620;
-        }
-        .canvas-area {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #0a0620;
-        }
-        #gameCanvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;   /* 保持比例，无拉伸，但会留黑边——我们通过背景铺满解决 */
-            background: #0a0620;
-        }
-        /* 其余样式保持不变 */
+        html, body { width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0; background: #0a0620; }
+        .game-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0620; }
+        .canvas-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
+        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0a0620; }
+        /* 其他样式保持不变 */
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
         .loading-bar-container { width: 280px; height: 24px; background: rgba(0,0,0,0.5); border-radius: 30px; overflow: hidden; border: 2px solid #ffccaa; }
@@ -108,7 +77,6 @@
 
 <script>
 (function(){
-    // 固定逻辑分辨率 1440x810 (9:16 竖屏比例, 实际横屏游戏会左右留黑边，但背景自己循环填充)
     const LOGIC_W = 1440;
     const LOGIC_H = 810;
     const GROUND_Y = 540;
@@ -118,10 +86,8 @@
     
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    // 设置画布实际像素尺寸为逻辑分辨率，不缩放（避免模糊）
     canvas.width = LOGIC_W;
     canvas.height = LOGIC_H;
-    // 通过CSS使画布在屏幕上居中并保持比例，黑边由我们自己的背景绘制来填充
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.objectFit = 'contain';
@@ -458,14 +424,14 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // 背景和地面循环：完全平铺逻辑画布，无黑边无接缝
+    // 关键：背景和地面无缝循环平铺，不留任何缝隙
     function drawBackground() {
         let bgWidth = bgImg.width || LOGIC_W;
         let groundWidth = groundImg.width || LOGIC_W;
         let bgOffset = (cameraX * 0.3) % bgWidth;
         let groundOffset = cameraX % groundWidth;
         
-        // 远景背景覆盖整个画布
+        // 远景背景完整覆盖画布
         if(bgImg.complete && bgImg.naturalWidth > 0) {
             ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H);
             if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H);
@@ -473,12 +439,13 @@
             drawStarField();
         }
         
-        // 近景地面：从 GROUND_Y 开始，高度覆盖到画布底部，彻底消除紫色接缝
+        // 近景地面：从 GROUND_Y 一直画到画布底部，确保没有紫色空隙
         if(groundImg.complete && groundImg.naturalWidth > 0) {
-            ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
-            if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
+            const groundHeight = LOGIC_H - GROUND_Y;
+            ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, groundHeight);
+            if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, groundHeight);
         } else {
-            ctx.fillStyle = "#5A4A3A";
+            ctx.fillStyle = "#6B4C3B";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
         }
     }
@@ -490,7 +457,27 @@
     function drawTraps() { for(let t of traps) { if(t.type === 'spike') { ctx.fillStyle = "#5A3A2A"; ctx.fillRect(t.x-cameraX, t.y, t.w, t.h); ctx.fillStyle = "#D89454"; for(let i=0;i<5;i++){ ctx.beginPath(); ctx.moveTo(t.x-cameraX+i*t.w/5, t.y); ctx.lineTo(t.x-cameraX+i*t.w/5+t.w/10, t.y-14); ctx.lineTo(t.x-cameraX+i*t.w/5+t.w/5, t.y); ctx.fill(); } } else if(t.type === 'flame_pillar' && t.active) { ctx.fillStyle = "#FF5A2A"; ctx.shadowBlur=16; ctx.beginPath(); ctx.ellipse(t.x-cameraX, t.y - t.radius/2, t.radius, t.radius*2, 0, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur=0; } } }
     function drawSpringboards() { for(let sb of springboards) { ctx.fillStyle = "#FFAA44"; ctx.fillRect(sb.x - cameraX, sb.y, sb.w, sb.h); ctx.fillStyle = "#FFDD88"; ctx.fillRect(sb.x - cameraX + 4, sb.y - 3, sb.w - 8, 4); ctx.fillStyle = "#FF8844"; ctx.fillRect(sb.x - cameraX + 2, sb.y + 2, sb.w - 4, 3); } }
     function drawQuestionBlocks() { for(let q of questionBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(q.x-cameraX, q.y, q.w, q.h); ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 36px monospace"; ctx.textAlign = "center"; ctx.fillText("?", q.x-cameraX+q.w/2, q.y+q.h/2+8); ctx.textAlign = "left"; } }
-    function drawPlayer() { ctx.save(); ctx.translate(player.x-cameraX + player.w/2, player.y + player.h/2); if(player.facingRight) ctx.scale(-1, 1); let img = (input.left || input.right) ? playerWalkImg : playerStandImg; if(img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, -player.w*0.65, -player.h*0.65, player.w*1.3, player.h*1.3); else { ctx.fillStyle = "#FFD8A0"; ctx.fillRect(-player.w/2,-player.h/2,player.w,player.h); ctx.fillStyle = "#F0A87A"; ctx.fillRect(-player.w/2+8,-player.h/2-6,player.w-16,10); } ctx.restore(); }
+    
+    function drawPlayer() {
+        ctx.save();
+        ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2);
+        if(player.facingRight) ctx.scale(-1, 1);
+        let img = (input.left || input.right) ? playerWalkImg : playerStandImg;
+        if(img && img.complete && img.naturalWidth > 0) {
+            // 严格按照原始宽高比绘制，不拉伸
+            ctx.drawImage(img, -player.w/2, -player.h/2, player.w, player.h);
+        } else {
+            ctx.fillStyle = "#FFD8A0";
+            ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
+            ctx.fillStyle = "#F0A87A";
+            ctx.fillRect(-player.w/2+8, -player.h/2-6, player.w-16, 10);
+            ctx.fillStyle = "#4A2A1A";
+            ctx.fillRect(-player.w/2+12, -player.h/2+12, 8, 8);
+            ctx.fillRect(-player.w/2+32, -player.h/2+12, 8, 8);
+        }
+        ctx.restore();
+    }
+    
     function drawUI() { drawScorePanel(); drawHighScorePanel(); if(message) { ctx.font = "20px monospace"; ctx.fillStyle = "#FFFAD0"; ctx.fillText(message, LOGIC_W/2-150, LOGIC_H-40); } }
     
     function gameLoop() { ctx.clearRect(0, 0, LOGIC_W, LOGIC_H); updateGame(); let shook = applyShake(); drawBackground(); drawLavaPits(); drawPlatforms(); drawMoonBlocks(); drawSpringboards(); drawTraps(); drawStars(); drawQuestionBlocks(); drawPlayer(); drawUI(); if(shook) restoreShake(); requestAnimationFrame(gameLoop); }
