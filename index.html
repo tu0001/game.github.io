@@ -6,10 +6,43 @@
     <title>超时空辉夜姬 | 无限跑酷</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body { width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0; background: #0a0620; }
-        .game-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; position: relative; }
-        .canvas-area { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
-        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0822; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: #0a0620; /* fallback, will be covered by canvas */
+        }
+        .game-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0620;
+        }
+        .canvas-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #0a0620;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            /* 关键修复：object-fit contain 会留黑边，改为 cover 保证铺满，但会裁剪；
+               游戏逻辑基于固定分辨率 1440x810，我们使用背景拉伸/平铺保证无黑边 */
+            object-fit: fill;
+            background: #0a0620;
+        }
         /* 其余样式保持不变 */
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
@@ -77,8 +110,24 @@
 
 <script>
 (function(){
+    // ---------- 固定逻辑分辨率（游戏世界尺寸，不拉伸玩法） ----------
+    const LOGIC_W = 1440;
+    const LOGIC_H = 810;
+    const GROUND_Y = 540;
+    const CHUNK_WIDTH = 900;
+    const GENERATE_AHEAD = 400;
+    const DELETE_BEHIND = 600;
+    
+    // 获取画布并强制设置为逻辑尺寸（保持内部坐标不变，通过CSS铺满）
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    canvas.width = LOGIC_W;
+    canvas.height = LOGIC_H;
+    // CSS 保证铺满屏幕且无黑边，同时内部绘制基于固定分辨率
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.objectFit = 'fill';  // 关键：拉伸填满，无黑边
+    
     const startOverlay = document.getElementById('startOverlay');
     const startBtn = document.getElementById('startBtn');
     const deathOverlay = document.getElementById('deathOverlay');
@@ -93,13 +142,6 @@
     const bottomControls = document.getElementById('bottomControls');
     const musicToggleBtn = document.getElementById('musicToggleBtn');
     const itemTimerBar = document.getElementById('itemTimerBar');
-    
-    const LOGIC_W = 1440;
-    const LOGIC_H = 810;
-    const GROUND_Y = 540;
-    const CHUNK_WIDTH = 900;
-    const GENERATE_AHEAD = 400;
-    const DELETE_BEHIND = 600;
     
     let gameRunning = false;
     let musicMuted = false;
@@ -230,9 +272,8 @@
     function checkLandscapeAndFullscreen() { if(window.matchMedia("(orientation: landscape)").matches) { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); fullscreenTip.classList.add('fade-out'); setTimeout(() => fullscreenTip.style.display = 'none', 500); } else { fullscreenTip.classList.remove('fade-out'); fullscreenTip.style.display = 'block'; } }
     checkLandscapeAndFullscreen(); setInterval(checkLandscapeAndFullscreen, 500);
     canvas.addEventListener('click', () => { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); });
-    function resizeCanvas() { canvas.width = LOGIC_W; canvas.height = LOGIC_H; }
-    window.addEventListener('resize', resizeCanvas); resizeCanvas();
     
+    // 输入控制
     let input = { left: false, right: false, jump: false };
     const leftBtn = document.querySelector('.left-btn'), rightBtn = document.querySelector('.right-btn'), jumpBtn = document.querySelector('.jump-btn');
     function attach(btn, key){ if(!btn) return; btn.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('button'); input[key]=true; }, {passive:false}); btn.addEventListener('touchend', (e)=>{ e.preventDefault(); input[key]=false; }); btn.addEventListener('mousedown', ()=>{ playSound('button'); input[key]=true; }); btn.addEventListener('mouseup', ()=>{ input[key]=false; }); btn.addEventListener('mouseleave', ()=>{ input[key]=false; }); }
@@ -291,12 +332,9 @@
         let endX = startX + CHUNK_WIDTH;
         platforms.push({ x: startX, y: GROUND_Y, w: CHUNK_WIDTH, h: 40, type: "ground" });
         if(Math.random() < 0.3) { let platformY = 380 + Math.random() * 120; platforms.push({ x: startX + 100 + Math.random() * 200, y: platformY, w: 80, h: 20, type: "platform" }); }
-        
         let starCount = 2 + Math.floor(Math.random() * 4);
         for(let i = 0; i < starCount; i++) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let sx = startX + 60 + Math.random() * (CHUNK_WIDTH - 120), sy = GROUND_Y - 40 - Math.random() * 80; if(!isPositionOverlappingStar(sx, sy)) { stars.push({ x: sx, y: sy, collected: false }); placed = true; } attempts++; } if(!placed) stars.push({ x: startX + 80 + i*70, y: GROUND_Y - 50, collected: false }); }
-        
         if(Math.random() < 0.25) { let pitCount = 1 + Math.floor(Math.random() * 2); for(let i = 0; i < pitCount; i++) { lavaPits.push({ x: startX + 60 + Math.random() * (CHUNK_WIDTH - 120), y: GROUND_Y - 15, w: 40 + Math.random() * 30, h: 20, type: "lava", particles: [] }); } }
-        
         let trapChance = 0.25 + (score / 8000);
         let trapCount = 0;
         let trapPositions = [];
@@ -311,11 +349,8 @@
                 trapCount++;
             }
         }
-        
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let qx = startX + 60 + Math.random() * (CHUNK_WIDTH - 120), qy = GROUND_Y - 80; if(!traps.some(t => Math.abs(t.x - qx) < 50)) { questionBlocks.push({ x: qx, y: qy, w: 60, h: 60, type: "questionBlock" }); placed = true; } attempts++; } if(!placed) questionBlocks.push({ x: startX + 150, y: GROUND_Y - 80, w: 60, h: 60, type: "questionBlock" }); }
-        
         if(Math.random() < 0.4) { let attempts = 0, placed = false; while(!placed && attempts < 20) { let mx = startX + 80 + Math.random() * (CHUNK_WIDTH - 160), my = GROUND_Y - 70; if(!traps.some(t => Math.abs(t.x - mx) < 50)) { moonBlocks.push({ x: mx, y: my, w: 60, h: 60, type: "moonBlock" }); placed = true; } attempts++; } if(!placed) moonBlocks.push({ x: startX + 200, y: GROUND_Y - 70, w: 60, h: 60, type: "moonBlock" }); }
-        
         if(Math.random() < 0.3) { movingPlatforms.push({ x: startX + 150 + Math.random() * 200, y: 300 + Math.random() * 200, w: 100, h: 20, range: 100 + Math.random() * 60, speed: 0.8 + Math.random() * 0.8, startX: startX + 150 + Math.random() * 200, currentX: 0, vx: 0 }); }
         if(Math.random() < 0.25) { springboards.push({ x: startX + 60 + Math.random() * (CHUNK_WIDTH - 120), y: GROUND_Y - 20, w: 50, h: 12, type: "springboard", bouncePower: -18 }); }
         return endX;
@@ -337,7 +372,6 @@
         player.vy += player.gravity * gameSpeed;
         player.y += player.vy * gameSpeed;
         player.onGround = false;
-        
         for(let plat of platforms) {
             let rect = {x:plat.x, y:plat.y, w:plat.w, h:plat.h};
             let pRect = {x:player.x, y:player.y, w:player.w, h:player.h};
@@ -375,7 +409,6 @@
                 playSound('spring', 0.14);
             }
         }
-        
         if(activeBuffs.fly.active) { if(input.jump) player.vy = -5 * gameSpeed; player.vy += 0.2 * gameSpeed; }
         if(input.jump && !activeBuffs.fly.active) {
             if(player.onGround) { player.vy = player.jumpPower; player.onGround = false; input.jump = false; playSound('jump', 0.1); }
@@ -428,14 +461,14 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // 修正背景绘制：循环平铺，无黑边，无紫色接缝
+    // 关键修复：背景与地面绘制，完全无缝、无紫色接缝、无黑边
     function drawBackground() {
         let bgWidth = bgImg.width || 1440;
         let groundWidth = groundImg.width || 1440;
         let bgOffset = (cameraX * 0.3) % bgWidth;
         let groundOffset = cameraX % groundWidth;
         
-        // 远景背景：平铺填满整个画布
+        // 远景背景：填满整个逻辑画布 (0,0,LOGIC_W,LOGIC_H)
         if(bgImg.complete && bgImg.naturalWidth > 0) {
             ctx.drawImage(bgImg, -bgOffset, 0, LOGIC_W, LOGIC_H);
             if(bgOffset > 0) ctx.drawImage(bgImg, bgWidth - bgOffset, 0, LOGIC_W, LOGIC_H);
@@ -443,15 +476,13 @@
             drawStarField();
         }
         
-        // 近景地面：从 GROUND_Y 开始，高度填满底部，完全覆盖紫色区域
+        // 近景地面：从 GROUND_Y 开始，高度 = LOGIC_H - GROUND_Y，完美覆盖底部，消除紫色接缝
         if(groundImg.complete && groundImg.naturalWidth > 0) {
             ctx.drawImage(groundImg, -groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
             if(groundOffset > 0) ctx.drawImage(groundImg, groundWidth - groundOffset, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
         } else {
-            ctx.fillStyle = "#E8D4A8";
+            ctx.fillStyle = "#8B5A6B";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
-            ctx.fillStyle = "#D4BC7A";
-            ctx.fillRect(0, GROUND_Y + (LOGIC_H - GROUND_Y) - 20, LOGIC_W, 20);
         }
     }
     
