@@ -6,10 +6,41 @@
     <title>超时空辉夜姬 | 无限跑酷</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body { width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0; background: #0a0620; }
-        .game-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; position: relative; }
-        .canvas-area { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
-        #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0822; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: #0a0620;
+        }
+        .game-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0620;
+            padding-top: env(safe-area-inset-top);
+            box-sizing: border-box;
+        }
+        .canvas-area {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #0a0620;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #0a0620;
+        }
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
         .loading-bar-container { width: 280px; height: 24px; background: rgba(0,0,0,0.5); border-radius: 30px; overflow: hidden; border: 2px solid #ffccaa; }
@@ -28,10 +59,53 @@
         .music-toggle-btn { position: fixed; top: 8px; left: 8px; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.5); backdrop-filter: blur(6px); border: 1px solid rgba(255,220,160,0.7); z-index: 40; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .fullscreen-tip { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); padding: 6px 18px; border-radius: 40px; color: #ffddbb; font-size: 12px; z-index: 25; pointer-events: none; white-space: nowrap; transition: opacity 0.5s; }
         .fullscreen-tip.fade-out { opacity: 0; }
-        .rotate-tip { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000ee; backdrop-filter: blur(14px); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #ffecb3; font-size: 26px; text-align: center; pointer-events: none; }
+        /* 旋转提示优化 */
+        .rotate-tip {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000ee;
+            backdrop-filter: blur(14px);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #ffecb3;
+            font-size: 26px;
+            text-align: center;
+            pointer-events: none;
+        }
         .rotate-tip.hidden { display: none; }
-        .rotate-icon { font-size: 90px; margin-bottom: 20px; animation: rotateHint 1.4s infinite ease; }
-        .rotate-text { background: rgba(0,0,0,0.7); padding: 12px 32px; border-radius: 60px; font-size: 20px; border: 1px solid #ffcc88; }
+        .rotate-icon {
+            font-size: 60px;
+            margin-bottom: 5px;
+            animation: rotateHint 1.4s infinite ease;
+        }
+        .rotate-text {
+            background: rgba(0,0,0,0.7);
+            padding: 12px 32px;
+            border-radius: 60px;
+            font-size: 20px;
+            border: 1px solid #ffcc88;
+            margin-top: 5px;
+        }
+        .rotate-sub {
+            font-size: 14px;
+            margin-top: 12px;
+            opacity: 0.8;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .rotate-sub span {
+            background: rgba(0,0,0,0.5);
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
         @keyframes rotateHint { 0%,100%{ transform: rotate(0deg); } 40%{ transform: rotate(90deg); } 80%{ transform: rotate(90deg); } }
         @media (orientation: landscape) { .rotate-tip { display: none; } }
         @media (max-width: 850px) and (orientation: landscape) { .ctrl-btn { width: 70px; height: 70px; font-size: 2.8rem; } }
@@ -72,7 +146,14 @@
     <div class="fullscreen-tip" id="fullscreenTip">✨ 横屏自动全屏 · 沉浸体验 ✨</div>
     <div class="item-timer-bar" id="itemTimerBar"></div>
 </div>
-<div class="rotate-tip" id="rotateTip"><div class="rotate-icon">📱🔄</div><div class="rotate-text">请打开「自动旋转」<br>横屏获得最佳体验</div></div>
+<div class="rotate-tip" id="rotateTip">
+    <div class="rotate-icon">📱🔄</div>
+    <div class="rotate-text">请打开「自动旋转」<br>横屏获得最佳体验</div>
+    <div class="rotate-sub">
+        <span>👇 下拉状态栏 👇</span>
+        <span style="font-size:12px;">打开“自动旋转”开关</span>
+    </div>
+</div>
 
 <script>
 (function(){
@@ -119,8 +200,11 @@
     let lavaPits = [];
     let springboards = [];
     
+    // 玩家碰撞箱放大1.1倍：52*1.1≈57.2 -> 57, 68*1.1≈74.8 -> 75
+    const PLAYER_W = 57;
+    const PLAYER_H = 75;
     let player = {
-        x: 200, y: GROUND_Y - 68, w: 52, h: 68,
+        x: 200, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H,
         vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88,
         gravity: 0.62, onGround: false, facingRight: false
     };
@@ -402,7 +486,7 @@
     }
     
     function gameOver() { gameRunning = false; if(score > highScore) { highScore = score; localStorage.setItem('highScore', highScore); } finalScoreDisplay.textContent = `得分: ${Math.floor(score)}`; highScoreDisplay.textContent = `最高分: ${highScore}`; deathOverlay.style.display = 'flex'; if(bgMusic) bgMusic.pause(); triggerShake(12); }
-    function fullReset() { score = 0; cameraX = 0; lastGeneratedX = 0; gameSpeed = 1; extraJump = 0; player = { x: 200, y: GROUND_Y - 68, w: 52, h: 68, vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88, gravity: 0.62, onGround: true, facingRight: false }; activeBuffs = { fly: { active: false, endTime: 0 }, magnet: { active: false, endTime: 0 }, shield: { active: false, endTime: 0 }, speed: { active: false, endTime: 0, multiplier: 1.5 }, doubleScore: { active: false, endTime: 0 }, doubleJump: { active: false, endTime: 0 } }; generateInitialChunks(); updateItemTimersDisplay(); deathOverlay.style.display = 'none'; gameRunning = true; if(bgMusic && bgMusic.paused && !musicMuted) startBackgroundMusic(); }
+    function fullReset() { score = 0; cameraX = 0; lastGeneratedX = 0; gameSpeed = 1; extraJump = 0; player = { x: 200, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88, gravity: 0.62, onGround: true, facingRight: false }; activeBuffs = { fly: { active: false, endTime: 0 }, magnet: { active: false, endTime: 0 }, shield: { active: false, endTime: 0 }, speed: { active: false, endTime: 0, multiplier: 1.5 }, doubleScore: { active: false, endTime: 0 }, doubleJump: { active: false, endTime: 0 } }; generateInitialChunks(); updateItemTimersDisplay(); deathOverlay.style.display = 'none'; gameRunning = true; if(bgMusic && bgMusic.paused && !musicMuted) startBackgroundMusic(); }
     function updateAnimation() { let shouldWalk = (input.left || input.right); if(shouldWalk) { walkAnimTimer++; if(walkAnimTimer >= walkFrameDelay) { walkAnimTimer = 0; walkFrame = (walkFrame + 1) % 4; } } else { walkAnimTimer = 0; walkFrame = 0; } if(player.vx > 2) player.facingRight = true; if(player.vx < -2) player.facingRight = false; }
     let msgTimer = 0, message = "";
     function updateGame() { if(!gameRunning) return; updateBuffs(); updatePlayerPhysics(); applyMagnet(); updateCamera(); updateTraps(); checkCollisions(); updateAnimation(); updateGeneration(); cleanOldObjects(); updateStarField(); updateLavaParticles(); if(msgTimer > 0) msgTimer--; }
@@ -427,38 +511,32 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // ==================== 最终版背景/地面循环平铺：绝对无缝，无空缺 ====================
+    // 背景地面：完全循环，无紫色后备（直接让贴图循环铺满，不填充其他颜色）
     function drawBackground() {
         const bgW = bgImg.width > 0 ? bgImg.width : LOGIC_W;
         const groundW = groundImg.width > 0 ? groundImg.width : LOGIC_W;
-        
         const bgOffsetX = (cameraX * 0.3) % bgW;
         const groundOffsetX = cameraX % groundW;
         
-        // 绘制远景背景：循环平铺，覆盖整个画布宽度
+        // 远景背景
         if (bgImg.complete && bgImg.naturalWidth > 0) {
-            let startX = -bgOffsetX;
-            // 循环直到完全覆盖屏幕右侧
-            for (let x = startX; x < LOGIC_W; x += bgW) {
+            for (let x = -bgOffsetX; x < LOGIC_W; x += bgW) {
                 ctx.drawImage(bgImg, x, 0, bgW, LOGIC_H);
             }
         } else {
             drawStarField();
         }
         
-        // 绘制近景地面：循环平铺，覆盖整个画布宽度
+        // 近景地面：只绘制贴图，不添加后备紫色
         if (groundImg.complete && groundImg.naturalWidth > 0) {
-            const groundY = GROUND_Y;
             const groundHeight = LOGIC_H - GROUND_Y;
-            let startX = -groundOffsetX;
-            for (let x = startX; x < LOGIC_W; x += groundW) {
-                ctx.drawImage(groundImg, x, groundY, groundW, groundHeight);
+            for (let x = -groundOffsetX; x < LOGIC_W; x += groundW) {
+                ctx.drawImage(groundImg, x, GROUND_Y, groundW, groundHeight);
             }
         } else {
-            ctx.fillStyle = "#8B5A6B";
+            // 后备：无紫色，用深棕色模拟地面
+            ctx.fillStyle = "#5A3E2E";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
-            ctx.fillStyle = "#D4BC7A";
-            ctx.fillRect(0, GROUND_Y + (LOGIC_H - GROUND_Y) - 20, LOGIC_W, 20);
         }
     }
     
