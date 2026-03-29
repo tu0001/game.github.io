@@ -10,7 +10,6 @@
         .game-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; position: relative; }
         .canvas-area { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #0a0620; }
         #gameCanvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0822; }
-        /* 其余样式保持不变 */
         .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #1a1338 0%, #0c0820 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         .loading-title { font-size: clamp(24px, 8vw, 48px); font-weight: bold; color: #FFF5E0; text-shadow: 0 0 20px #ff88aa; margin-bottom: 30px; font-family: monospace; }
         .loading-bar-container { width: 280px; height: 24px; background: rgba(0,0,0,0.5); border-radius: 30px; overflow: hidden; border: 2px solid #ffccaa; }
@@ -428,20 +427,18 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // ==================== 全新背景/地面循环逻辑：绝对无缝 ====================
+    // ==================== 最终版背景/地面循环平铺：绝对无缝，无空缺 ====================
     function drawBackground() {
-        // 获取图片实际宽度，如果未加载则用逻辑宽度（保证循环）
         const bgW = bgImg.width > 0 ? bgImg.width : LOGIC_W;
         const groundW = groundImg.width > 0 ? groundImg.width : LOGIC_W;
         
-        // 背景滚动偏移（慢速）
         const bgOffsetX = (cameraX * 0.3) % bgW;
-        // 地面滚动偏移（与相机同步）
         const groundOffsetX = cameraX % groundW;
         
-        // 绘制远景背景：从偏移位置开始，连续平铺直至填满整个画布宽度
+        // 绘制远景背景：循环平铺，覆盖整个画布宽度
         if (bgImg.complete && bgImg.naturalWidth > 0) {
             let startX = -bgOffsetX;
+            // 循环直到完全覆盖屏幕右侧
             for (let x = startX; x < LOGIC_W; x += bgW) {
                 ctx.drawImage(bgImg, x, 0, bgW, LOGIC_H);
             }
@@ -449,7 +446,7 @@
             drawStarField();
         }
         
-        // 绘制近景地面：从偏移位置开始，连续平铺直至填满画布宽度
+        // 绘制近景地面：循环平铺，覆盖整个画布宽度
         if (groundImg.complete && groundImg.naturalWidth > 0) {
             const groundY = GROUND_Y;
             const groundHeight = LOGIC_H - GROUND_Y;
@@ -473,7 +470,6 @@
     function drawSpringboards() { for(let sb of springboards) { ctx.fillStyle = "#FFAA44"; ctx.fillRect(sb.x - cameraX, sb.y, sb.w, sb.h); ctx.fillStyle = "#FFDD88"; ctx.fillRect(sb.x - cameraX + 4, sb.y - 3, sb.w - 8, 4); ctx.fillStyle = "#FF8844"; ctx.fillRect(sb.x - cameraX + 2, sb.y + 2, sb.w - 4, 3); } }
     function drawQuestionBlocks() { for(let q of questionBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(q.x-cameraX, q.y, q.w, q.h); ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 36px monospace"; ctx.textAlign = "center"; ctx.fillText("?", q.x-cameraX+q.w/2, q.y+q.h/2+8); ctx.textAlign = "left"; } }
     
-    // 玩家绘制严格保持原始比例
     function drawPlayer() {
         ctx.save();
         ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2);
