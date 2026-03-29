@@ -428,41 +428,36 @@
         ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42);
     }
     
-    // ==================== 彻底重写的背景/地面循环平铺 ====================
+    // ==================== 全新背景/地面循环逻辑：绝对无缝 ====================
     function drawBackground() {
-        // 获取图片实际宽度，如果未加载则使用逻辑宽度
+        // 获取图片实际宽度，如果未加载则用逻辑宽度（保证循环）
         const bgW = bgImg.width > 0 ? bgImg.width : LOGIC_W;
         const groundW = groundImg.width > 0 ? groundImg.width : LOGIC_W;
         
-        // 远景背景滚动速度较慢
+        // 背景滚动偏移（慢速）
         const bgOffsetX = (cameraX * 0.3) % bgW;
-        // 近景地面滚动速度与相机同步
+        // 地面滚动偏移（与相机同步）
         const groundOffsetX = cameraX % groundW;
         
-        // 绘制远景背景：左右各一张，覆盖整个画布宽度
+        // 绘制远景背景：从偏移位置开始，连续平铺直至填满整个画布宽度
         if (bgImg.complete && bgImg.naturalWidth > 0) {
-            // 第一张（左）
-            ctx.drawImage(bgImg, -bgOffsetX, 0, LOGIC_W, LOGIC_H);
-            // 第二张（右），当偏移不为0时补充右边空缺
-            if (bgOffsetX > 0) {
-                ctx.drawImage(bgImg, bgW - bgOffsetX, 0, LOGIC_W, LOGIC_H);
+            let startX = -bgOffsetX;
+            for (let x = startX; x < LOGIC_W; x += bgW) {
+                ctx.drawImage(bgImg, x, 0, bgW, LOGIC_H);
             }
         } else {
-            // 后备星空
             drawStarField();
         }
         
-        // 绘制近景地面：从 GROUND_Y 开始，高度为 LOGIC_H - GROUND_Y，覆盖底部
+        // 绘制近景地面：从偏移位置开始，连续平铺直至填满画布宽度
         if (groundImg.complete && groundImg.naturalWidth > 0) {
+            const groundY = GROUND_Y;
             const groundHeight = LOGIC_H - GROUND_Y;
-            // 第一块地面
-            ctx.drawImage(groundImg, -groundOffsetX, GROUND_Y, LOGIC_W, groundHeight);
-            // 第二块地面，用于无缝衔接
-            if (groundOffsetX > 0) {
-                ctx.drawImage(groundImg, groundW - groundOffsetX, GROUND_Y, LOGIC_W, groundHeight);
+            let startX = -groundOffsetX;
+            for (let x = startX; x < LOGIC_W; x += groundW) {
+                ctx.drawImage(groundImg, x, groundY, groundW, groundHeight);
             }
         } else {
-            // 后备纯色地面
             ctx.fillStyle = "#8B5A6B";
             ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y);
             ctx.fillStyle = "#D4BC7A";
@@ -478,17 +473,15 @@
     function drawSpringboards() { for(let sb of springboards) { ctx.fillStyle = "#FFAA44"; ctx.fillRect(sb.x - cameraX, sb.y, sb.w, sb.h); ctx.fillStyle = "#FFDD88"; ctx.fillRect(sb.x - cameraX + 4, sb.y - 3, sb.w - 8, 4); ctx.fillStyle = "#FF8844"; ctx.fillRect(sb.x - cameraX + 2, sb.y + 2, sb.w - 4, 3); } }
     function drawQuestionBlocks() { for(let q of questionBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(q.x-cameraX, q.y, q.w, q.h); ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 36px monospace"; ctx.textAlign = "center"; ctx.fillText("?", q.x-cameraX+q.w/2, q.y+q.h/2+8); ctx.textAlign = "left"; } }
     
-    // 修正玩家绘制：严格保持比例，不拉伸
+    // 玩家绘制严格保持原始比例
     function drawPlayer() {
         ctx.save();
         ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2);
         if (player.facingRight) ctx.scale(-1, 1);
         let img = (input.left || input.right) ? playerWalkImg : playerStandImg;
         if (img && img.complete && img.naturalWidth > 0) {
-            // 按原始宽高绘制，不做额外缩放
             ctx.drawImage(img, -player.w/2, -player.h/2, player.w, player.h);
         } else {
-            // 后备图形
             ctx.fillStyle = "#FFD8A0";
             ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
             ctx.fillStyle = "#F0A87A";
