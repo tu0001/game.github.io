@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover, shrink-to-fit=no">
-    <title>超时空辉夜姬 | 三轨跑酷</title>
+    <title>超时空辉夜姬 | 无限跑酷 · 三线幻境</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
         html, body {
@@ -125,7 +125,7 @@
         </div>
         <div class="start-overlay" id="startOverlay" style="display: none;">
             <div class="start-title">✨ 超时空輝夜姬 ✨</div>
-            <div class="start-sub">三轨跑酷 · 躲避陷阱收集星辉</div>
+            <div class="start-sub">三线幻境 · 星轨跑酷</div>
             <button class="start-btn" id="startBtn">时 空 启 程</button>
         </div>
         <div id="deathOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 35;">
@@ -142,7 +142,7 @@
         <div class="right-button"><button class="ctrl-btn jump-btn">↑</button></div>
     </div>
     <button class="music-toggle-btn" id="musicToggleBtn">🔊</button>
-    <div class="fullscreen-tip" id="fullscreenTip">✨ 横屏自动全屏 · 沉浸体验 ✨</div>
+    <div class="fullscreen-tip" id="fullscreenTip">✨ 横屏自动全屏 · 三线星轨 ✨</div>
     <div class="item-timer-bar" id="itemTimerBar"></div>
 </div>
 <div class="rotate-tip" id="rotateTip">
@@ -175,21 +175,20 @@
     
     const LOGIC_W = 1440;
     const LOGIC_H = 810;
-    const GROUND_Y = 540;      // 地面Y坐标（实际平台）
-    const GROUND_H = 40;       // 地面厚度
+    const GROUND_Y = 540;
+    const CHUNK_WIDTH = 900;
+    const GENERATE_AHEAD = 400;
+    const DELETE_BEHIND = 600;
     
-    // ========== 三条视觉辅助线（无碰撞，仅用于整齐摆放道具）==========
-    // 下轨（陷阱线）- 与地面平齐
-    const TRACK_LOWER_Y = GROUND_Y - 12;
-    // 中轨（道具/障碍物线）
-    const TRACK_MID_Y = GROUND_Y - 85;
-    // 上轨（星星/道具线）
-    const TRACK_UPPER_Y = GROUND_Y - 155;
+    // ---------- 三线系统 (不显示, 无碰撞, 仅用于生成) ----------
+    // 线1(陷阱线) : 地面附近陷阱统一水平
+    const LINE_TRAP_Y = GROUND_Y - 24;      // spikes 底部对齐线
+    const LINE_OBSTACLE_MID_Y = GROUND_Y - 110;  // 第二线: 障碍物/星星 底部高度
+    const LINE_OBSTACLE_TOP_Y = GROUND_Y - 185;  // 第三线: 障碍物/星星 底部高度
     
-    const TRACK_POSITIONS = [TRACK_LOWER_Y, TRACK_MID_Y, TRACK_UPPER_Y];
-    const TRACK_NAMES = ["陷阱轨", "道具轨", "高空轨"];
+    // 物体最小间距 (避免重叠)
+    const MIN_DIST_BETWEEN = 210;
     
-    // ========== 游戏参数 ==========
     let gameRunning = false;
     let musicMuted = false;
     let resourcesLoaded = false;
@@ -200,23 +199,24 @@
     let gameSpeed = 1.0;
     let extraJump = 0;
     
-    // 世界物体
-    let platforms = [];        // 地面平台
-    let trackItems = [];       // 轨道物品 { x, y, type, track, w, h, collected, value }
-    let movingPlatforms = [];
+    let platforms = [];
+    let movingPlatforms = [];   // 保留但不再生成, 避免干扰
+    let stars = [];
+    let traps = [];
+    let questionBlocks = [];
+    let moonBlocks = [];
     let lavaPits = [];
     let springboards = [];
     
-    // 玩家
-    const PLAYER_W = 52;
-    const PLAYER_H = 68;
+    // 玩家碰撞箱
+    const PLAYER_W = 57;
+    const PLAYER_H = 75;
     let player = {
         x: 200, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H,
-        vx: 0, vy: 0, speed: 6.2, jumpPower: -12.2,
-        gravity: 0.62, onGround: true, facingRight: true
+        vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88,
+        gravity: 0.62, onGround: false, facingRight: false
     };
     
-    // 道具BUFF
     let activeBuffs = {
         fly: { active: false, endTime: 0 },
         magnet: { active: false, endTime: 0 },
@@ -226,231 +226,306 @@
         doubleJump: { active: false, endTime: 0 }
     };
     
-    let walkFrame = 0, walkAnimTimer = 0;
+    let walkFrame = 0, walkAnimTimer = 0, walkFrameDelay = 6;
     let audioCtx = null, bgMusic = null;
     
-    // ========== 美术资源（使用DataURI内嵌，确保稳定显示）==========
-    // 背景渐变绘制（不再依赖外部图片）
-    function drawStyledBackground() {
-        // 星空渐变
-        const grad = ctx.createLinearGradient(0, 0, 0, LOGIC_H);
-        grad.addColorStop(0, '#0a0a2e');
-        grad.addColorStop(0.5, '#1a1a4e');
-        grad.addColorStop(1, '#2a1a3e');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
-        
-        // 绘制闪烁星星
-        for(let i = 0; i < 200; i++) {
-            let x = (i * 131) % LOGIC_W;
-            let y = (i * 253) % (LOGIC_H - 100);
-            let size = 1 + (i % 3);
-            let alpha = 0.3 + Math.sin(Date.now() * 0.001 * (i % 10)) * 0.2;
-            ctx.fillStyle = `rgba(255, 240, 200, ${alpha})`;
-            ctx.beginPath();
-            ctx.arc(x, y, size, 0, Math.PI*2);
-            ctx.fill();
-        }
-        
-        // 远处云朵
-        ctx.fillStyle = "rgba(180, 160, 220, 0.15)";
-        for(let i = 0; i < 8; i++) {
-            let cloudX = (cameraX * 0.2 + i * 300) % (LOGIC_W + 400) - 200;
-            ctx.beginPath();
-            ctx.ellipse(cloudX, 120, 80, 40, 0, 0, Math.PI*2);
-            ctx.ellipse(cloudX+50, 100, 60, 35, 0, 0, Math.PI*2);
-            ctx.ellipse(cloudX-40, 105, 55, 32, 0, 0, Math.PI*2);
-            ctx.fill();
+    let bgImg = new Image();
+    let groundImg = new Image();
+    let playerStandImg = new Image();
+    let playerWalkImg = new Image();
+    let imagesLoaded = { bg: false, ground: false, stand: false, walk: false };
+    let totalToLoad = 4;
+    let loadedCount = 0;
+    
+    function imageLoaded() {
+        loadedCount++;
+        let percent = (loadedCount / totalToLoad) * 100;
+        loadingBar.style.width = percent + '%';
+        loadingText.textContent = `加载资源 ${loadedCount}/${totalToLoad} ...`;
+        if(loadedCount === totalToLoad) {
+            loadingText.textContent = '加载完成！三线星轨·启程';
+            setTimeout(() => {
+                loadingOverlay.style.display = 'none';
+                startOverlay.style.display = 'flex';
+                resourcesLoaded = true;
+            }, 500);
         }
     }
     
-    function drawGround() {
-        // 地面渐变
-        const grad = ctx.createLinearGradient(0, GROUND_Y, 0, GROUND_Y + GROUND_H);
-        grad.addColorStop(0, '#6B4E3A');
-        grad.addColorStop(1, '#4A3222');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, GROUND_Y, LOGIC_W, GROUND_H);
-        
-        // 地面细节
-        ctx.fillStyle = '#8B6E4A';
-        for(let i = 0; i < 30; i++) {
-            let x = (cameraX * 0.8 + i * 55) % LOGIC_W;
-            ctx.fillRect(x, GROUND_Y + 5, 3, 6);
-        }
-        ctx.fillStyle = '#C4A265';
-        ctx.fillRect(0, GROUND_Y, LOGIC_W, 3);
+    bgImg.onload = () => { imagesLoaded.bg = true; imageLoaded(); };
+    bgImg.onerror = () => { imageLoaded(); };
+    groundImg.onload = () => { imagesLoaded.ground = true; imageLoaded(); };
+    groundImg.onerror = () => { imageLoaded(); };
+    playerStandImg.onload = () => { imagesLoaded.stand = true; imageLoaded(); };
+    playerStandImg.onerror = () => { imageLoaded(); };
+    playerWalkImg.onload = () => { imagesLoaded.walk = true; imageLoaded(); };
+    playerWalkImg.onerror = () => { imageLoaded(); };
+    
+    bgImg.src = "bai.png";
+    groundImg.src = "dim.png";
+    playerStandImg.src = "stand.png";
+    playerWalkImg.src = "walk.png";
+    
+    function initAudio() { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+    
+    function playSound(type, volume = 0.12) {
+        if(!audioCtx || musicMuted) return;
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            gain.gain.value = volume;
+            if(type === 'jump') { osc.frequency.value = 660; osc.type = 'sine'; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+            else if(type === 'star') { osc.frequency.value = 880; osc.type = 'sine'; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15); osc.start(); osc.stop(audioCtx.currentTime + 0.15); setTimeout(() => { const osc2 = audioCtx.createOscillator(); const g2 = audioCtx.createGain(); osc2.connect(g2); g2.connect(audioCtx.destination); osc2.frequency.value = 1100; g2.gain.value = 0.08; osc2.start(); osc2.stop(audioCtx.currentTime + 0.1); }, 50); }
+            else if(type === 'death') { osc.frequency.value = 220; osc.type = 'sawtooth'; gain.gain.value = 0.2; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3); osc.start(); osc.stop(audioCtx.currentTime + 0.3); }
+            else if(type === 'item') { osc.frequency.value = 1046; osc.type = 'sine'; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+            else if(type === 'lava') { osc.frequency.value = 180; osc.type = 'sine'; gain.gain.value = 0.15; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25); osc.start(); osc.stop(audioCtx.currentTime + 0.25); }
+            else if(type === 'shield') { osc.frequency.value = 1320; osc.type = 'sine'; gain.gain.value = 0.1; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15); osc.start(); osc.stop(audioCtx.currentTime + 0.15); }
+            else if(type === 'doubleJump') { osc.frequency.value = 1000; osc.type = 'sine'; gain.gain.value = 0.12; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18); osc.start(); osc.stop(audioCtx.currentTime + 0.18); }
+            else if(type === 'spring') { osc.frequency.value = 540; osc.type = 'sine'; gain.gain.value = 0.14; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+            else if(type === 'button') { osc.frequency.value = 880; osc.type = 'sine'; gain.gain.value = 0.06; gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1); }
+        } catch(e) {}
     }
     
-    // 绘制三条辅助线（视觉参考）
-    function drawGuideLines() {
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.setLineDash([8, 12]);
-        ctx.lineWidth = 2;
-        for(let i = 0; i < TRACK_POSITIONS.length; i++) {
-            ctx.beginPath();
-            ctx.moveTo(0, TRACK_POSITIONS[i]);
-            ctx.lineTo(LOGIC_W, TRACK_POSITIONS[i]);
-            if(i === 0) ctx.strokeStyle = '#ff6666';
-            else if(i === 1) ctx.strokeStyle = '#66ff66';
-            else ctx.strokeStyle = '#66aaff';
-            ctx.stroke();
-            // 标签
-            ctx.font = "12px monospace";
-            ctx.fillStyle = `rgba(255,255,200,0.6)`;
-            ctx.fillText(TRACK_NAMES[i], 12, TRACK_POSITIONS[i] - 4);
-        }
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-        ctx.restore();
+    function initBackgroundMusic() {
+        try {
+            bgMusic = new Audio('game.mp3');
+            bgMusic.loop = true; bgMusic.volume = 0.2; bgMusic.muted = musicMuted;
+            musicToggleBtn.textContent = musicMuted ? "🔇" : "🔊";
+            const startMusic = () => { if(gameRunning && !musicMuted && bgMusic.paused) bgMusic.play().catch(e=>{}); document.removeEventListener('touchstart', startMusic); document.removeEventListener('click', startMusic); };
+            document.addEventListener('touchstart', startMusic); document.addEventListener('click', startMusic);
+        } catch(e) {}
     }
     
-    // ========== 生成逻辑（保证同轨道物品间距 >= 250）==========
-    function isOverlapOnTrack(newX, trackIdx, minDist = 260) {
-        for(let it of trackItems) {
-            if(it.track === trackIdx && Math.abs(it.x - newX) < minDist) return true;
+    function startBackgroundMusic() { if(bgMusic && bgMusic.paused && gameRunning && !musicMuted) bgMusic.play().catch(e => {}); }
+    
+    musicToggleBtn.addEventListener('click', () => {
+        playSound('button'); musicMuted = !musicMuted;
+        if(bgMusic) { bgMusic.muted = musicMuted; if(!musicMuted && gameRunning && bgMusic.paused) bgMusic.play().catch(e => {}); }
+        musicToggleBtn.textContent = musicMuted ? "🔇" : "🔊";
+    });
+    
+    let starsBg = [];
+    for(let i = 0; i < 150; i++) starsBg.push({ x: Math.random() * LOGIC_W, y: Math.random() * LOGIC_H, radius: Math.random() * 2 + 1, speed: Math.random() * 0.1 + 0.05, alpha: Math.random() * 0.4 + 0.2 });
+    let starOffset = 0;
+    function updateStarField() { starOffset = (starOffset + 0.08) % LOGIC_H; }
+    function drawStarField() { for(let s of starsBg) { let y = (s.y + starOffset * s.speed) % LOGIC_H; ctx.beginPath(); ctx.arc(s.x, y, s.radius, 0, Math.PI*2); ctx.fillStyle = `rgba(255,240,200,${s.alpha})`; ctx.fill(); } }
+    
+    let shakeAmount = 0;
+    function triggerShake(intensity) { shakeAmount = intensity; playSound('death', 0.2); document.body.style.backgroundColor = '#ff8866'; setTimeout(() => document.body.style.backgroundColor = '', 150); }
+    function applyShake() { if(shakeAmount > 0) { ctx.save(); ctx.translate((Math.random()-0.5)*shakeAmount, (Math.random()-0.5)*shakeAmount); shakeAmount *= 0.85; if(shakeAmount<0.5) shakeAmount=0; return true; } return false; }
+    function restoreShake() { if(shakeAmount===0) return; ctx.restore(); }
+    
+    function requestFullscreen() { const el = gameContainer; if(el.requestFullscreen) el.requestFullscreen(); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); }
+    function checkLandscapeAndFullscreen() { if(window.matchMedia("(orientation: landscape)").matches) { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); fullscreenTip.classList.add('fade-out'); setTimeout(() => fullscreenTip.style.display = 'none', 500); } else { fullscreenTip.classList.remove('fade-out'); fullscreenTip.style.display = 'block'; } }
+    checkLandscapeAndFullscreen(); setInterval(checkLandscapeAndFullscreen, 500);
+    canvas.addEventListener('click', () => { if(!(document.fullscreenElement || document.webkitFullscreenElement)) requestFullscreen(); });
+    function resizeCanvas() { canvas.width = LOGIC_W; canvas.height = LOGIC_H; }
+    window.addEventListener('resize', resizeCanvas); resizeCanvas();
+    
+    let input = { left: false, right: false, jump: false };
+    const leftBtn = document.querySelector('.left-btn'), rightBtn = document.querySelector('.right-btn'), jumpBtn = document.querySelector('.jump-btn');
+    function attach(btn, key){ if(!btn) return; btn.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('button'); input[key]=true; }, {passive:false}); btn.addEventListener('touchend', (e)=>{ e.preventDefault(); input[key]=false; }); btn.addEventListener('mousedown', ()=>{ playSound('button'); input[key]=true; }); btn.addEventListener('mouseup', ()=>{ input[key]=false; }); btn.addEventListener('mouseleave', ()=>{ input[key]=false; }); }
+    if(leftBtn && rightBtn && jumpBtn) { attach(leftBtn, 'left'); attach(rightBtn, 'right'); attach(jumpBtn, 'jump'); }
+    window.addEventListener('keydown', (e)=>{ if(e.key === 'ArrowLeft'){ input.left=true; e.preventDefault(); } if(e.key === 'ArrowRight'){ input.right=true; e.preventDefault(); } if(e.key === 'ArrowUp' || e.key === ' '){ input.jump=true; e.preventDefault(); } });
+    window.addEventListener('keyup', (e)=>{ if(e.key === 'ArrowLeft') input.left=false; if(e.key === 'ArrowRight') input.right=false; if(e.key === 'ArrowUp' || e.key === ' ') input.jump=false; });
+    
+    function collide(r1,r2){ return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y); }
+    
+    const itemTypes = ['fly', 'magnet', 'shield', 'speed', 'doubleScore', 'doubleJump'];
+    const itemIcons = { fly: '🪽', magnet: '🧲', shield: '🛡️', speed: '⚡', doubleScore: '✨', doubleJump: '🦘' };
+    function getRandomItemType() { return itemTypes[Math.floor(Math.random() * itemTypes.length)]; }
+    
+    function activateItem(type) {
+        let now = Date.now();
+        let duration = 5000;
+        playSound('item', 0.15);
+        switch(type) {
+            case 'fly': activeBuffs.fly = { active: true, endTime: now + duration }; break;
+            case 'magnet': activeBuffs.magnet = { active: true, endTime: now + duration }; break;
+            case 'shield': activeBuffs.shield = { active: true, endTime: now + duration }; break;
+            case 'speed': activeBuffs.speed = { active: true, endTime: now + duration, multiplier: 1.5 }; break;
+            case 'doubleScore': activeBuffs.doubleScore = { active: true, endTime: now + duration }; break;
+            case 'doubleJump': activeBuffs.doubleJump = { active: true, endTime: now + duration }; extraJump = 1; playSound('doubleJump', 0.12); break;
+        }
+        updateItemTimersDisplay();
+    }
+    
+    function updateItemTimersDisplay() {
+        let now = Date.now();
+        let activeList = [];
+        if(activeBuffs.fly.active && activeBuffs.fly.endTime > now) activeList.push({ type: 'fly', end: activeBuffs.fly.endTime });
+        if(activeBuffs.magnet.active && activeBuffs.magnet.endTime > now) activeList.push({ type: 'magnet', end: activeBuffs.magnet.endTime });
+        if(activeBuffs.shield.active && activeBuffs.shield.endTime > now) activeList.push({ type: 'shield', end: activeBuffs.shield.endTime });
+        if(activeBuffs.speed.active && activeBuffs.speed.endTime > now) activeList.push({ type: 'speed', end: activeBuffs.speed.endTime });
+        if(activeBuffs.doubleScore.active && activeBuffs.doubleScore.endTime > now) activeList.push({ type: 'doubleScore', end: activeBuffs.doubleScore.endTime });
+        if(activeBuffs.doubleJump.active && activeBuffs.doubleJump.endTime > now) activeList.push({ type: 'doubleJump', end: activeBuffs.doubleJump.endTime });
+        itemTimerBar.innerHTML = activeList.map(b => { let remaining = Math.max(0, (b.end - now) / 1000); let percent = (remaining / 5) * 100; return `<div class="item-timer"><span class="item-timer-icon">${itemIcons[b.type]}</span><div class="item-timer-bar-fill" style="width: ${percent}%; background: #ffaa66;"></div><span>${Math.ceil(remaining)}s</span></div>`; }).join('');
+    }
+    
+    function updateBuffs() {
+        let now = Date.now();
+        if(activeBuffs.fly.active && activeBuffs.fly.endTime <= now) activeBuffs.fly.active = false;
+        if(activeBuffs.magnet.active && activeBuffs.magnet.endTime <= now) activeBuffs.magnet.active = false;
+        if(activeBuffs.shield.active && activeBuffs.shield.endTime <= now) activeBuffs.shield.active = false;
+        if(activeBuffs.speed.active && activeBuffs.speed.endTime <= now) activeBuffs.speed.active = false;
+        if(activeBuffs.doubleScore.active && activeBuffs.doubleScore.endTime <= now) activeBuffs.doubleScore.active = false;
+        if(activeBuffs.doubleJump.active && activeBuffs.doubleJump.endTime <= now) { activeBuffs.doubleJump.active = false; extraJump = 0; }
+        gameSpeed = 1.0;
+        updateItemTimersDisplay();
+    }
+    
+    // 抛物线星星组生成 (每组3~5颗，呈抛物线弧度)
+    function generateParabolicStarGroup(centerX, baseY, count = 3, widthRange = 120) {
+        let group = [];
+        if(count < 2) count = 3;
+        let step = widthRange / (count - 1);
+        let startX = centerX - widthRange/2;
+        for(let i = 0; i < count; i++) {
+            let x = startX + i * step;
+            // 抛物线偏移: y = baseY - 22 * sin(x偏移)效果，呈现弧线
+            let t = (i / (count - 1)) * Math.PI;
+            let yOffset = Math.sin(t) * 20;
+            let y = baseY - yOffset;
+            group.push({ x: x, y: y, collected: false });
+        }
+        return group;
+    }
+    
+    // 检查重叠 (x范围)
+    function isOverlap(x, w, list, threshold = MIN_DIST_BETWEEN) {
+        for(let obj of list) {
+            let objX = obj.x, objW = obj.w || 36;
+            if(Math.abs(objX - x) < threshold) return true;
         }
         return false;
     }
     
+    // 全新三线生成逻辑 (无重叠)
     function generateChunk(startX) {
-        let endX = startX + 900;
+        let endX = startX + CHUNK_WIDTH;
+        // 地面
+        platforms.push({ x: startX, y: GROUND_Y, w: CHUNK_WIDTH, h: 40, type: "ground" });
         
-        // 为每条轨道生成物品
-        for(let track = 0; track < 3; track++) {
-            let itemCount = track === 0 ? 1 : (Math.random() > 0.4 ? 2 : 1);
-            for(let i = 0; i < itemCount; i++) {
-                let posX = startX + 120 + Math.random() * (750);
-                if(isOverlapOnTrack(posX, track, 270)) continue;
-                
-                let baseY = TRACK_POSITIONS[track];
-                let type = "";
-                let value = 0;
-                let w = 0, h = 0;
-                
-                if(track === 0) {
-                    // 下轨：陷阱为主
-                    let rand = Math.random();
-                    if(rand < 0.6) {
-                        type = "spike";
-                        w = 48; h = 28;
-                    } else if(rand < 0.85) {
-                        lavaPits.push({ x: posX, y: baseY + 5, w: 55, h: 18, particles: [] });
-                        continue;
+        let usedPositions = [];
+        
+        // ---- 线1: 陷阱 (spike / 火焰柱) 保持同一水平线 ----
+        let trapCount = Math.random() < 0.4 ? 1 : (Math.random() < 0.2 ? 2 : 0);
+        for(let i = 0; i < trapCount; i++) {
+            let attempts = 0;
+            while(attempts < 12) {
+                let trapX = startX + 80 + Math.random() * (CHUNK_WIDTH - 160);
+                let ok = true;
+                for(let used of usedPositions) if(Math.abs(used - trapX) < MIN_DIST_BETWEEN) { ok = false; break; }
+                if(ok) {
+                    usedPositions.push(trapX);
+                    if(Math.random() < 0.7) {
+                        traps.push({ x: trapX, y: LINE_TRAP_Y, w: 60, h: 24, type: "spike", cycleTimer: 0, isUp: false, originalY: LINE_TRAP_Y });
                     } else {
-                        springboards.push({ x: posX, y: baseY - 8, w: 52, h: 14, bouncePower: -16 });
-                        continue;
+                        traps.push({ x: trapX, y: LINE_TRAP_Y - 18, interval: 100, radius: 28, type: "flame_pillar", active: false, timer: 0 });
                     }
-                } else {
-                    // 中轨/上轨：星星 + 道具 + 障碍物混合
-                    let rand = Math.random();
-                    if(rand < 0.55) {
-                        type = "star";
-                        w = 28; h = 28;
-                        value = activeBuffs.doubleScore.active ? 200 : 100;
-                    } else if(rand < 0.75) {
-                        type = "moonBlock";
-                        w = 48; h = 48;
-                        value = 0;
-                    } else if(rand < 0.88) {
-                        type = "blocker";
-                        w = 45; h = 42;
-                    } else {
-                        type = "star";
-                        w = 28; h = 28;
-                        value = activeBuffs.doubleScore.active ? 200 : 100;
-                    }
+                    break;
                 }
-                
-                if(type) {
-                    trackItems.push({
-                        x: posX, y: baseY - (h || 24), w: w, h: h,
-                        type: type, track: track, collected: false, value: value
-                    });
-                }
+                attempts++;
             }
         }
         
-        // 偶尔生成移动平台（高空点缀）
+        // 熔岩坑 (同线1陷阱类，但放置宽度)
         if(Math.random() < 0.25) {
-            movingPlatforms.push({
-                x: startX + 200 + Math.random() * 500, y: 280 + Math.random() * 150,
-                w: 90, h: 18, range: 70, speed: 0.7, startX: startX + 200, vx: 0
-            });
+            let lavaX = startX + 60 + Math.random() * (CHUNK_WIDTH - 100);
+            if(!isOverlap(lavaX, 40, traps, 150) && !isOverlap(lavaX, 40, lavaPits, 180)) {
+                lavaPits.push({ x: lavaX, y: LINE_TRAP_Y - 8, w: 45, h: 20, type: "lava", particles: [] });
+            }
         }
         
-        return endX;
+        // ---- 线2 (中等高度) 随机生成障碍物或者星星群 (抛物线星群 / 问号块 / 月亮块) ----
+        let midType = Math.random() < 0.5 ? "star" : "obstacle";
+        if(midType === "star") {
+            let starX = startX + 120 + Math.random() * (CHUNK_WIDTH - 240);
+            if(!isOverlap(starX, 40, stars, 130) && !isOverlap(starX, 40, questionBlocks, 130) && !isOverlap(starX, 40, moonBlocks, 130)) {
+                let group = generateParabolicStarGroup(starX, LINE_OBSTACLE_MID_Y, 3 + Math.floor(Math.random()*2), 100);
+                stars.push(...group);
+            }
+        } else {
+            if(Math.random() < 0.6 && !isOverlap(startX + 200, 60, questionBlocks, 150)) {
+                questionBlocks.push({ x: startX + 150 + Math.random() * 120, y: LINE_OBSTACLE_MID_Y - 60, w: 60, h: 60, type: "questionBlock" });
+            } else if(!isOverlap(startX + 250, 60, moonBlocks, 150)) {
+                moonBlocks.push({ x: startX + 180 + Math.random() * 140, y: LINE_OBSTACLE_MID_Y - 60, w: 60, h: 60, type: "moonBlock" });
+            }
+        }
+        
+        // ---- 线3 (高线) 星星抛物线 或 特殊障碍块 ----
+        let topType = Math.random() < 0.55 ? "star" : "obstacle";
+        if(topType === "star") {
+            let starX2 = startX + 100 + Math.random() * (CHUNK_WIDTH - 200);
+            if(!isOverlap(starX2, 40, stars, 130)) {
+                let group2 = generateParabolicStarGroup(starX2, LINE_OBSTACLE_TOP_Y, 3 + Math.floor(Math.random()*2), 110);
+                stars.push(...group2);
+            }
+        } else {
+            if(Math.random() < 0.6 && !isOverlap(startX + 220, 60, questionBlocks, 150)) {
+                questionBlocks.push({ x: startX + 200 + Math.random() * 130, y: LINE_OBSTACLE_TOP_Y - 60, w: 60, h: 60, type: "questionBlock" });
+            } else if(!isOverlap(startX + 260, 60, moonBlocks, 150)) {
+                moonBlocks.push({ x: startX + 230 + Math.random() * 130, y: LINE_OBSTACLE_TOP_Y - 60, w: 60, h: 60, type: "moonBlock" });
+            }
+        }
+        
+        // 弹簧板 (仅地面附近，不干扰三线)
+        if(Math.random() < 0.2) {
+            let springX = startX + 80 + Math.random() * (CHUNK_WIDTH - 140);
+            if(!isOverlap(springX, 50, traps, 120) && !isOverlap(springX, 50, lavaPits, 120)) {
+                springboards.push({ x: springX, y: GROUND_Y - 20, w: 50, h: 12, type: "springboard", bouncePower: -18 });
+            }
+        }
+        
+        return startX + CHUNK_WIDTH;
     }
     
-    function generateInitialChunks() {
-        trackItems = [];
-        movingPlatforms = [];
-        lavaPits = [];
-        springboards = [];
-        let currentX = 0;
-        for(let i = 0; i < 3; i++) currentX = generateChunk(currentX);
-        lastGeneratedX = currentX;
+    function generateInitialChunks() { 
+        platforms = []; movingPlatforms = []; stars = []; traps = []; questionBlocks = []; moonBlocks = []; lavaPits = []; springboards = [];
+        let currentX = 0; 
+        for(let i = 0; i < 3; i++) currentX = generateChunk(currentX); 
+        lastGeneratedX = currentX; 
     }
     
-    function updateGeneration() {
-        let rightEdge = cameraX + LOGIC_W;
-        if(rightEdge > lastGeneratedX - 400) lastGeneratedX = generateChunk(lastGeneratedX);
-    }
+    function updateGeneration() { let rightEdge = cameraX + LOGIC_W; if(rightEdge > lastGeneratedX - GENERATE_AHEAD) lastGeneratedX = generateChunk(lastGeneratedX); }
+    function cleanOldObjects() { let threshold = cameraX - DELETE_BEHIND; platforms = platforms.filter(p => p.x + p.w > threshold); stars = stars.filter(s => s.x + 20 > threshold); traps = traps.filter(t => t.x + (t.w || 20) > threshold); questionBlocks = questionBlocks.filter(q => q.x + q.w > threshold); moonBlocks = moonBlocks.filter(m => m.x + m.w > threshold); lavaPits = lavaPits.filter(l => l.x + l.w > threshold); springboards = springboards.filter(s => s.x + s.w > threshold); }
     
-    function cleanOldObjects() {
-        let threshold = cameraX - 600;
-        trackItems = trackItems.filter(it => it.x + it.w > threshold);
-        movingPlatforms = movingPlatforms.filter(mp => mp.x + mp.w > threshold);
-        lavaPits = lavaPits.filter(l => l.x + l.w > threshold);
-        springboards = springboards.filter(s => s.x + s.w > threshold);
-    }
+    function updateLavaParticles() { for(let lava of lavaPits) { if(!lava.particles) lava.particles = []; if(Math.random() < 0.3) lava.particles.push({ x: lava.x + Math.random() * lava.w, y: lava.y - Math.random() * 5, vx: (Math.random() - 0.5) * 0.8, vy: -Math.random() * 2 - 1, life: 1, size: 2 + Math.random() * 3 }); for(let i = lava.particles.length-1; i >= 0; i--) { let p = lava.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.03; if(p.life <= 0 || p.y < lava.y - 40) lava.particles.splice(i,1); } } }
     
-    // ========== 物理与碰撞 ==========
-    function collide(r1, r2) {
-        return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
-    }
+    function updateCamera() { let targetX = player.x - LOGIC_W / 2; if(targetX > cameraX) cameraX = targetX; if(player.x < cameraX + 50) player.x = cameraX + 50; }
     
-    function updatePhysics() {
+    function updatePlayerPhysics() {
         let currentSpeed = activeBuffs.speed.active ? player.speed * 1.5 : player.speed;
         let move = (input.left ? -1 : 0) + (input.right ? 1 : 0);
         player.vx = move * currentSpeed;
         player.x += player.vx * gameSpeed;
-        
-        // 重力与跳跃
         player.vy += player.gravity * gameSpeed;
         player.y += player.vy * gameSpeed;
         player.onGround = false;
         
-        // 地面碰撞
-        let groundRect = { x: 0, y: GROUND_Y, w: LOGIC_W, h: GROUND_H };
-        let pRect = { x: player.x, y: player.y, w: player.w, h: player.h };
-        if(collide(pRect, groundRect)) {
-            if(player.vy >= 0 && player.y + player.h - GROUND_Y <= GROUND_H + 10) {
-                player.y = GROUND_Y - player.h;
-                player.vy = 0;
-                player.onGround = true;
-                extraJump = activeBuffs.doubleJump.active ? 1 : 0;
-            }
-        }
-        
-        // 移动平台碰撞
-        for(let mp of movingPlatforms) {
-            let rect = { x: mp.x, y: mp.y, w: mp.w, h: mp.h };
+        for(let plat of platforms) {
+            let rect = {x:plat.x, y:plat.y, w:plat.w, h:plat.h};
+            let pRect = {x:player.x, y:player.y, w:player.w, h:player.h};
             if(collide(pRect, rect)) {
-                if(player.vy >= 0 && player.y + player.h - mp.y <= mp.h + 8) {
-                    player.y = mp.y - player.h;
-                    player.vy = 0;
-                    player.onGround = true;
-                    player.x += mp.vx * gameSpeed;
-                    extraJump = activeBuffs.doubleJump.active ? 1 : 0;
-                }
+                if(player.vy >= 0 && (player.y + player.h - plat.y <= plat.h + 8)) { player.y = plat.y - player.h; player.vy = 0; player.onGround = true; extraJump = activeBuffs.doubleJump.active ? 1 : 0; }
+                else if(player.vy < 0 && (plat.y + plat.h - player.y <= 12)) { player.y = plat.y + plat.h; player.vy = 0; }
+                else { if(player.x + player.w/2 < plat.x + plat.w/2) player.x = plat.x - player.w; else player.x = plat.x + plat.w; }
             }
         }
-        
-        // 弹簧
+        for(let mb of moonBlocks) {
+            let rect = {x:mb.x, y:mb.y, w:mb.w, h:mb.h};
+            let pRect = {x:player.x, y:player.y, w:player.w, h:player.h};
+            if(collide(pRect, rect)) {
+                if(player.vy >= 0 && (player.y + player.h - mb.y <= mb.h + 8)) { player.y = mb.y - player.h; player.vy = 0; player.onGround = true; extraJump = activeBuffs.doubleJump.active ? 1 : 0; }
+                else if(player.vy < 0 && (mb.y + mb.h - player.y <= 12)) { player.y = mb.y + mb.h; player.vy = 0; }
+                else { if(player.x + player.w/2 < mb.x + mb.w/2) player.x = mb.x - player.w; else player.x = mb.x + mb.w; }
+            }
+        }
         for(let sb of springboards) {
-            let rect = { x: sb.x, y: sb.y, w: sb.w, h: sb.h };
+            let rect = {x:sb.x, y:sb.y, w:sb.w, h:sb.h};
+            let pRect = {x:player.x, y:player.y, w:player.w, h:player.h};
             if(collide(pRect, rect) && player.vy >= 0) {
                 player.y = sb.y - player.h;
                 player.vy = sb.bouncePower;
@@ -459,401 +534,61 @@
             }
         }
         
-        // 跳跃
+        if(activeBuffs.fly.active) { if(input.jump) player.vy = -5 * gameSpeed; player.vy += 0.2 * gameSpeed; }
         if(input.jump && !activeBuffs.fly.active) {
-            if(player.onGround) {
-                player.vy = player.jumpPower;
-                player.onGround = false;
-                playSound('jump', 0.1);
-                input.jump = false;
-            } else if(activeBuffs.doubleJump.active && extraJump > 0) {
-                player.vy = player.jumpPower;
-                extraJump--;
-                playSound('doubleJump', 0.12);
-                input.jump = false;
-            }
+            if(player.onGround) { player.vy = player.jumpPower; player.onGround = false; input.jump = false; playSound('jump', 0.1); }
+            else if(activeBuffs.doubleJump.active && extraJump > 0) { player.vy = player.jumpPower; extraJump--; input.jump = false; playSound('doubleJump', 0.12); }
         }
-        
-        // 飞行模式
-        if(activeBuffs.fly.active && input.jump) {
-            player.vy = -5 * gameSpeed;
-        }
-        
-        // 边界
         if(player.y + player.h > LOGIC_H + 100 || player.y < -100) gameOver();
-        if(player.x < cameraX + 40) player.x = cameraX + 40;
-        
-        // 面向方向
-        if(player.vx > 1) player.facingRight = true;
-        if(player.vx < -1) player.facingRight = false;
+    }
+    
+    function applyMagnet() { if(!activeBuffs.magnet.active) return; for(let s of stars) { if(s.collected) continue; let dx = player.x - s.x, dy = player.y - s.y, dist = Math.hypot(dx, dy); if(dist < 250) { let angle = Math.atan2(dy, dx); let force = Math.min(12, 300 / (dist + 5)) * 1.2; s.x += Math.cos(angle) * force; s.y += Math.sin(angle) * force; } } }
+    
+    function updateTraps() {
+        for(let t of traps) {
+            if(t.type === 'spike') { t.cycleTimer = (t.cycleTimer || 0) + 1/60; if(t.cycleTimer >= 1.2) { t.cycleTimer = 0; t.isUp = !t.isUp; } t.y = (t.originalY || t.y) + (t.isUp ? -16 : 0); }
+            else if(t.type === 'flame_pillar') { t.timer = (t.timer || 0) + 1/60; if(t.timer >= t.interval) { t.timer = 0; t.active = true; setTimeout(()=>{ t.active = false; }, 220); } }
+        }
     }
     
     function checkCollisions() {
-        // 星星/道具收集
-        for(let it of trackItems) {
-            if(it.collected) continue;
-            let rect = { x: it.x, y: it.y, w: it.w, h: it.h };
-            if(collide({ x: player.x, y: player.y, w: player.w, h: player.h }, rect)) {
-                if(it.type === 'star') {
-                    score += it.value;
-                    it.collected = true;
-                    playSound('star', 0.12);
-                } else if(it.type === 'moonBlock') {
-                    let items = ['fly','magnet','shield','speed','doubleScore','doubleJump'];
-                    let randItem = items[Math.floor(Math.random() * items.length)];
-                    activateItem(randItem);
-                    it.collected = true;
-                } else if(it.type === 'blocker') {
-                    if(activeBuffs.shield.active) {
-                        playSound('shield', 0.15);
-                        activeBuffs.shield.active = false;
-                        it.collected = true;
-                        updateItemTimersDisplay();
-                    } else {
-                        gameOver();
-                        return;
-                    }
-                } else if(it.type === 'spike') {
-                    if(activeBuffs.shield.active) {
-                        playSound('shield', 0.15);
-                        activeBuffs.shield.active = false;
-                        it.collected = true;
-                        updateItemTimersDisplay();
-                    } else {
-                        gameOver();
-                        return;
-                    }
-                }
-            }
-        }
-        
-        // 熔岩
-        for(let lava of lavaPits) {
-            let rect = { x: lava.x, y: lava.y, w: lava.w, h: lava.h };
-            if(collide({ x: player.x, y: player.y, w: player.w, h: player.h }, rect)) {
-                if(activeBuffs.shield.active) {
-                    playSound('shield', 0.15);
-                    activeBuffs.shield.active = false;
-                    lavaPits = lavaPits.filter(l => l !== lava);
-                    updateItemTimersDisplay();
-                } else {
-                    gameOver();
-                    return;
-                }
-            }
-        }
+        let starValue = activeBuffs.doubleScore.active ? 200 : 100;
+        for(let s of stars) { if(!s.collected) { let rect = {x:s.x-14, y:s.y-14, w:28, h:28}; if(collide({x:player.x,y:player.y,w:player.w,h:player.h}, rect)) { s.collected = true; score += starValue; playSound('star', 0.12); } } }
+        for(let q of questionBlocks) { let rect = {x:q.x, y:q.y, w:q.w, h:q.h}; if(collide({x:player.x,y:player.y,w:player.w,h:player.h}, rect)) { let itemType = getRandomItemType(); activateItem(itemType); questionBlocks = questionBlocks.filter(b => b !== q); break; } }
+        for(let i = lavaPits.length-1; i >= 0; i--) { let lava = lavaPits[i]; let rect = {x:lava.x, y:lava.y, w:lava.w, h:lava.h}; if(collide({x:player.x,y:player.y,w:player.w,h:player.h}, rect)) { if(activeBuffs.shield.active) { playSound('shield', 0.15); activeBuffs.shield.active = false; lavaPits.splice(i,1); updateItemTimersDisplay(); } else { playSound('lava', 0.15); gameOver(); return; } } }
+        for(let i = traps.length-1; i >= 0; i--) { let t = traps[i]; let hazardRect; if(t.type === 'spike') hazardRect = {x:t.x, y:t.y, w:t.w, h:t.h}; else if(t.type === 'flame_pillar' && t.active) hazardRect = {x:t.x - t.radius, y:t.y - t.radius*1.5, w:t.radius*2, h:t.radius*3}; else continue; if(hazardRect && collide({x:player.x,y:player.y,w:player.w,h:player.h}, hazardRect)) { if(activeBuffs.shield.active) { playSound('shield', 0.15); activeBuffs.shield.active = false; traps.splice(i,1); updateItemTimersDisplay(); } else { gameOver(); return; } } }
     }
     
-    function updateCamera() {
-        let targetX = player.x - LOGIC_W / 2;
-        if(targetX > cameraX) cameraX = targetX;
-        if(cameraX < 0) cameraX = 0;
+    function gameOver() { gameRunning = false; if(score > highScore) { highScore = score; localStorage.setItem('highScore', highScore); } finalScoreDisplay.textContent = `得分: ${Math.floor(score)}`; highScoreDisplay.textContent = `最高分: ${highScore}`; deathOverlay.style.display = 'flex'; if(bgMusic) bgMusic.pause(); triggerShake(12); }
+    
+    function fullReset() { score = 0; cameraX = 0; lastGeneratedX = 0; gameSpeed = 1; extraJump = 0; player = { x: 200, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, speed: 6.38, jumpPower: -12.88, gravity: 0.62, onGround: true, facingRight: false }; activeBuffs = { fly: { active: false, endTime: 0 }, magnet: { active: false, endTime: 0 }, shield: { active: false, endTime: 0 }, speed: { active: false, endTime: 0, multiplier: 1.5 }, doubleScore: { active: false, endTime: 0 }, doubleJump: { active: false, endTime: 0 } }; generateInitialChunks(); updateItemTimersDisplay(); deathOverlay.style.display = 'none'; gameRunning = true; if(bgMusic && bgMusic.paused && !musicMuted) startBackgroundMusic(); }
+    
+    function updateAnimation() { let shouldWalk = (input.left || input.right); if(shouldWalk) { walkAnimTimer++; if(walkAnimTimer >= walkFrameDelay) { walkAnimTimer = 0; walkFrame = (walkFrame + 1) % 4; } } else { walkAnimTimer = 0; walkFrame = 0; } if(player.vx > 2) player.facingRight = true; if(player.vx < -2) player.facingRight = false; }
+    
+    function updateGame() { if(!gameRunning) return; updateBuffs(); updatePlayerPhysics(); applyMagnet(); updateCamera(); updateTraps(); checkCollisions(); updateAnimation(); updateGeneration(); cleanOldObjects(); updateStarField(); updateLavaParticles(); }
+    
+    // 绘制所有美术 (不变)
+    function drawScorePanel() { let panelW = 220, panelH = 56, x = 20, y = 70; ctx.globalAlpha = 0.85; ctx.fillStyle = "#1a1a2e"; ctx.beginPath(); ctx.roundRect(x, y, panelW, panelH, 28); ctx.fill(); ctx.globalAlpha = 1; ctx.font = "32px monospace"; ctx.fillStyle = "#FFD966"; ctx.fillText("⭐", x + 18, y + 42); ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(Math.floor(score), x + 70, y + 42); }
+    function drawHighScorePanel() { let panelW = 220, panelH = 56, x = LOGIC_W - 20 - panelW, y = 70; ctx.globalAlpha = 0.85; ctx.fillStyle = "#1a1a2e"; ctx.beginPath(); ctx.roundRect(x, y, panelW, panelH, 28); ctx.fill(); ctx.globalAlpha = 1; ctx.font = "32px monospace"; ctx.fillStyle = "#FFD966"; ctx.fillText("🏆", x + 18, y + 42); ctx.font = "bold 28px monospace"; ctx.fillStyle = "#FFFFFF"; ctx.fillText(highScore, x + 70, y + 42); }
+    function drawBackground() { const bgW = bgImg.width > 0 ? bgImg.width : LOGIC_W; const groundW = groundImg.width > 0 ? groundImg.width : LOGIC_W; const bgOffsetX = (cameraX * 0.3) % bgW; const groundOffsetX = cameraX % groundW; if (bgImg.complete && bgImg.naturalWidth > 0) { for (let x = -bgOffsetX; x < LOGIC_W; x += bgW) ctx.drawImage(bgImg, x, 0, bgW, LOGIC_H); } else drawStarField(); if (groundImg.complete && groundImg.naturalWidth > 0) { const groundHeight = LOGIC_H - GROUND_Y; for (let x = -groundOffsetX; x < LOGIC_W; x += groundW) ctx.drawImage(groundImg, x, GROUND_Y, groundW, groundHeight); } else { ctx.fillStyle = "#5A3E2E"; ctx.fillRect(0, GROUND_Y, LOGIC_W, LOGIC_H - GROUND_Y); } }
+    function drawLavaPits() { for(let lava of lavaPits) { let grad = ctx.createLinearGradient(lava.x - cameraX, lava.y, lava.x - cameraX + lava.w, lava.y + lava.h); grad.addColorStop(0, "#FF4500"); grad.addColorStop(0.5, "#FF6600"); grad.addColorStop(1, "#FF2200"); ctx.fillStyle = grad; ctx.fillRect(lava.x - cameraX, lava.y, lava.w, lava.h); for(let p of lava.particles) { ctx.fillStyle = `rgba(255, 100, 0, ${p.life * 0.8})`; ctx.beginPath(); ctx.arc(p.x - cameraX, p.y, p.size, 0, Math.PI*2); ctx.fill(); } } }
+    function drawPlatforms() { for(let p of platforms) { ctx.fillStyle = "#AA88AA"; ctx.fillRect(p.x-cameraX, p.y, p.w, p.h); ctx.fillStyle = "#CC99CC"; ctx.fillRect(p.x-cameraX, p.y, p.w, 3); } }
+    function drawMoonBlocks() { for(let mb of moonBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(mb.x - cameraX, mb.y, mb.w, mb.h); ctx.fillStyle = "#DD99FF"; ctx.fillRect(mb.x - cameraX + 2, mb.y + 2, mb.w - 4, mb.h - 4); ctx.font = "36px monospace"; ctx.fillStyle = "#FFF9C4"; ctx.textAlign = "center"; ctx.fillText("🌙", mb.x - cameraX + mb.w/2, mb.y + mb.h/2 + 10); ctx.textAlign = "left"; } }
+    function drawStars() { for(let s of stars) { if(!s.collected) { ctx.font = "28px monospace"; ctx.shadowBlur = 8; ctx.shadowColor = "#ffcc88"; ctx.fillText("⭐", s.x-cameraX-14, s.y-14); } } ctx.shadowBlur = 0; }
+    function drawTraps() { for(let t of traps) { if(t.type === 'spike') { ctx.fillStyle = "#5A3A2A"; ctx.fillRect(t.x-cameraX, t.y, t.w, t.h); ctx.fillStyle = "#D89454"; for(let i=0;i<5;i++){ ctx.beginPath(); ctx.moveTo(t.x-cameraX+i*t.w/5, t.y); ctx.lineTo(t.x-cameraX+i*t.w/5+t.w/10, t.y-14); ctx.lineTo(t.x-cameraX+i*t.w/5+t.w/5, t.y); ctx.fill(); } } else if(t.type === 'flame_pillar' && t.active) { ctx.fillStyle = "#FF5A2A"; ctx.shadowBlur=16; ctx.beginPath(); ctx.ellipse(t.x-cameraX, t.y - t.radius/2, t.radius, t.radius*2, 0, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur=0; } } }
+    function drawSpringboards() { for(let sb of springboards) { ctx.fillStyle = "#FFAA44"; ctx.fillRect(sb.x - cameraX, sb.y, sb.w, sb.h); ctx.fillStyle = "#FFDD88"; ctx.fillRect(sb.x - cameraX + 4, sb.y - 3, sb.w - 8, 4); ctx.fillStyle = "#FF8844"; ctx.fillRect(sb.x - cameraX + 2, sb.y + 2, sb.w - 4, 3); } }
+    function drawQuestionBlocks() { for(let q of questionBlocks) { ctx.fillStyle = "#AA66CC"; ctx.fillRect(q.x-cameraX, q.y, q.w, q.h); ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 36px monospace"; ctx.textAlign = "center"; ctx.fillText("?", q.x-cameraX+q.w/2, q.y+q.h/2+8); ctx.textAlign = "left"; } }
+    function drawPlayer() { ctx.save(); ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2); if (player.facingRight) ctx.scale(-1, 1); let img = (input.left || input.right) ? playerWalkImg : playerStandImg; if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, -player.w/2, -player.h/2, player.w, player.h); else { ctx.fillStyle = "#FFD8A0"; ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h); ctx.fillStyle = "#F0A87A"; ctx.fillRect(-player.w/2+8, -player.h/2-6, player.w-16, 10); ctx.fillStyle = "#4A2A1A"; ctx.fillRect(-player.w/2+12, -player.h/2+12, 8, 8); ctx.fillRect(-player.w/2+32, -player.h/2+12, 8, 8); } ctx.restore(); }
+    function drawUI() { drawScorePanel(); drawHighScorePanel(); }
+    
+    function gameLoop() { ctx.clearRect(0, 0, LOGIC_W, LOGIC_H); updateGame(); let shook = applyShake(); drawBackground(); drawLavaPits(); drawPlatforms(); drawMoonBlocks(); drawSpringboards(); drawTraps(); drawStars(); drawQuestionBlocks(); drawPlayer(); drawUI(); if(shook) restoreShake(); requestAnimationFrame(gameLoop); }
+    
+    startBtn.addEventListener('click', () => { if(!resourcesLoaded) return; playSound('button'); initAudio(); initBackgroundMusic(); fullReset(); startOverlay.style.display = 'none'; bottomControls.style.display = 'flex'; gameRunning = true; if(bgMusic && !musicMuted) startBackgroundMusic(); });
+    restartBtn.addEventListener('click', () => { playSound('button'); fullReset(); deathOverlay.style.display = 'none'; bottomControls.style.display = 'flex'; gameRunning = true; if(bgMusic && !musicMuted) startBackgroundMusic(); });
+    
+    if (!window.CanvasRenderingContext2D.prototype.roundRect) {
+        CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) { if (w < 2 * r) r = w / 2; if (h < 2 * r) r = h / 2; this.moveTo(x+r, y); this.lineTo(x+w-r, y); this.quadraticCurveTo(x+w, y, x+w, y+r); this.lineTo(x+w, y+h-r); this.quadraticCurveTo(x+w, y+h, x+w-r, y+h); this.lineTo(x+r, y+h); this.quadraticCurveTo(x, y+h, x, y+h-r); this.lineTo(x, y+r); this.quadraticCurveTo(x, y, x+r, y); return this; };
     }
-    
-    function updateMovingPlatforms() {
-        for(let mp of movingPlatforms) {
-            let oldX = mp.x;
-            mp.x = mp.startX + Math.sin(Date.now() * 0.003 * mp.speed) * mp.range;
-            mp.vx = mp.x - oldX;
-        }
-    }
-    
-    // ========== 音效与BUFF ==========
-    function playSound(type, volume = 0.1) {
-        if(!audioCtx || musicMuted) return;
-        try {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            gain.gain.value = volume;
-            osc.type = 'sine';
-            if(type === 'jump') osc.frequency.value = 660;
-            else if(type === 'star') osc.frequency.value = 880;
-            else if(type === 'item') osc.frequency.value = 1046;
-            else if(type === 'spring') osc.frequency.value = 540;
-            else osc.frequency.value = 600;
-            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.2);
-        } catch(e) {}
-    }
-    
-    const itemIcons = { fly: '🪽', magnet: '🧲', shield: '🛡️', speed: '⚡', doubleScore: '✨', doubleJump: '🦘' };
-    function activateItem(type) {
-        let now = Date.now(), duration = 5000;
-        playSound('item', 0.12);
-        switch(type) {
-            case 'fly': activeBuffs.fly = { active: true, endTime: now + duration }; break;
-            case 'magnet': activeBuffs.magnet = { active: true, endTime: now + duration }; break;
-            case 'shield': activeBuffs.shield = { active: true, endTime: now + duration }; break;
-            case 'speed': activeBuffs.speed = { active: true, endTime: now + duration, multiplier: 1.5 }; break;
-            case 'doubleScore': activeBuffs.doubleScore = { active: true, endTime: now + duration }; break;
-            case 'doubleJump': activeBuffs.doubleJump = { active: true, endTime: now + duration }; extraJump = 1; break;
-        }
-        updateItemTimersDisplay();
-    }
-    
-    function updateItemTimersDisplay() {
-        let now = Date.now();
-        let activeList = [];
-        for(let key in activeBuffs) {
-            if(activeBuffs[key].active && activeBuffs[key].endTime > now) {
-                activeList.push({ type: key, end: activeBuffs[key].endTime });
-            }
-        }
-        itemTimerBar.innerHTML = activeList.map(b => {
-            let remaining = Math.max(0, (b.end - now) / 1000);
-            let percent = (remaining / 5) * 100;
-            return `<div class="item-timer"><span class="item-timer-icon">${itemIcons[b.type] || '✨'}</span><div class="item-timer-bar-fill" style="width: ${percent}%;"></div><span>${Math.ceil(remaining)}s</span></div>`;
-        }).join('');
-    }
-    
-    function updateBuffs() {
-        let now = Date.now();
-        for(let k in activeBuffs) {
-            if(activeBuffs[k].endTime && activeBuffs[k].endTime <= now) activeBuffs[k].active = false;
-        }
-        gameSpeed = 1.0;
-        updateItemTimersDisplay();
-    }
-    
-    // ========== 游戏流程 ==========
-    function gameOver() {
-        gameRunning = false;
-        if(score > highScore) {
-            highScore = score;
-            localStorage.setItem('highScore', highScore);
-        }
-        finalScoreDisplay.textContent = `得分: ${Math.floor(score)}`;
-        highScoreDisplay.textContent = `最高分: ${highScore}`;
-        deathOverlay.style.display = 'flex';
-        if(bgMusic) bgMusic.pause();
-        triggerShake(10);
-    }
-    
-    function triggerShake(intensity) { shakeAmount = intensity; }
-    let shakeAmount = 0;
-    function applyShake() { if(shakeAmount > 0) { ctx.save(); ctx.translate((Math.random()-0.5)*shakeAmount, (Math.random()-0.5)*shakeAmount); shakeAmount *= 0.85; if(shakeAmount<0.5) shakeAmount=0; return true; } return false; }
-    function restoreShake() { if(shakeAmount===0) return; ctx.restore(); }
-    
-    function fullReset() {
-        score = 0;
-        cameraX = 0;
-        gameSpeed = 1;
-        extraJump = 0;
-        player = {
-            x: 200, y: GROUND_Y - PLAYER_H, w: PLAYER_W, h: PLAYER_H,
-            vx: 0, vy: 0, speed: 6.2, jumpPower: -12.2,
-            gravity: 0.62, onGround: true, facingRight: true
-        };
-        activeBuffs = {
-            fly: { active: false, endTime: 0 }, magnet: { active: false, endTime: 0 },
-            shield: { active: false, endTime: 0 }, speed: { active: false, endTime: 0, multiplier: 1.5 },
-            doubleScore: { active: false, endTime: 0 }, doubleJump: { active: false, endTime: 0 }
-        };
-        generateInitialChunks();
-        updateItemTimersDisplay();
-        deathOverlay.style.display = 'none';
-        gameRunning = true;
-        if(bgMusic && !musicMuted) bgMusic.play().catch(e=>{});
-    }
-    
-    function initBackgroundMusic() {
-        try {
-            bgMusic = new Audio('data:audio/mp3;base64,SUQzBAAAAAABEVRYWFgAAAAtU291bmRibGF6ZQwAAAAA');
-            bgMusic.loop = true;
-            bgMusic.volume = 0.2;
-            bgMusic.muted = musicMuted;
-            musicToggleBtn.textContent = musicMuted ? "🔇" : "🔊";
-        } catch(e) {}
-    }
-    
-    // 输入处理
-    let input = { left: false, right: false, jump: false };
-    const leftBtn = document.querySelector('.left-btn'), rightBtn = document.querySelector('.right-btn'), jumpBtn = document.querySelector('.jump-btn');
-    function attachHandler(btn, key) {
-        if(!btn) return;
-        btn.addEventListener('touchstart', (e)=>{ e.preventDefault(); input[key]=true; }, {passive:false});
-        btn.addEventListener('touchend', (e)=>{ e.preventDefault(); input[key]=false; });
-        btn.addEventListener('mousedown', ()=>{ input[key]=true; });
-        btn.addEventListener('mouseup', ()=>{ input[key]=false; });
-        btn.addEventListener('mouseleave', ()=>{ input[key]=false; });
-    }
-    attachHandler(leftBtn, 'left');
-    attachHandler(rightBtn, 'right');
-    attachHandler(jumpBtn, 'jump');
-    window.addEventListener('keydown', (e)=>{
-        if(e.key === 'ArrowLeft') { input.left=true; e.preventDefault(); }
-        if(e.key === 'ArrowRight') { input.right=true; e.preventDefault(); }
-        if(e.key === 'ArrowUp' || e.key === ' ') { input.jump=true; e.preventDefault(); }
-    });
-    window.addEventListener('keyup', (e)=>{
-        if(e.key === 'ArrowLeft') input.left=false;
-        if(e.key === 'ArrowRight') input.right=false;
-        if(e.key === 'ArrowUp' || e.key === ' ') input.jump=false;
-    });
-    
-    // 绘制所有物体
-    function drawObjects() {
-        for(let it of trackItems) {
-            if(it.collected) continue;
-            let x = it.x - cameraX;
-            if(it.type === 'star') {
-                ctx.fillStyle = "#FFD966";
-                ctx.shadowBlur = 12;
-                ctx.shadowColor = "#ffaa44";
-                ctx.font = "32px monospace";
-                ctx.fillText("⭐", x, it.y - 4);
-            } else if(it.type === 'moonBlock') {
-                ctx.fillStyle = "#AA88FF";
-                ctx.fillRect(x, it.y, it.w, it.h);
-                ctx.fillStyle = "#DDAAFF";
-                ctx.fillRect(x+4, it.y+4, it.w-8, 8);
-                ctx.font = "26px monospace";
-                ctx.fillStyle = "#FFF9C4";
-                ctx.fillText("🌙", x+12, it.y+38);
-            } else if(it.type === 'blocker') {
-                ctx.fillStyle = "#8B5A3A";
-                ctx.fillRect(x, it.y, it.w, it.h);
-                ctx.fillStyle = "#AA6E4A";
-                ctx.fillRect(x+6, it.y+6, it.w-12, 6);
-                ctx.fillStyle = "#5A3A2A";
-                for(let i=0;i<3;i++) ctx.fillRect(x+8+i*12, it.y+18, 6, 14);
-            } else if(it.type === 'spike') {
-                ctx.fillStyle = "#7A4A2A";
-                ctx.fillRect(x, it.y, it.w, it.h);
-                ctx.fillStyle = "#C47A44";
-                for(let i=0;i<4;i++) {
-                    ctx.beginPath();
-                    ctx.moveTo(x+i*it.w/4, it.y);
-                    ctx.lineTo(x+i*it.w/4+8, it.y-14);
-                    ctx.lineTo(x+i*it.w/4+16, it.y);
-                    ctx.fill();
-                }
-            }
-        }
-        for(let lava of lavaPits) {
-            ctx.fillStyle = "#FF5522";
-            ctx.fillRect(lava.x-cameraX, lava.y, lava.w, lava.h);
-            ctx.fillStyle = "#FF8844";
-            ctx.fillRect(lava.x-cameraX+4, lava.y-3, lava.w-8, 4);
-        }
-        for(let sb of springboards) {
-            ctx.fillStyle = "#FFAA55";
-            ctx.fillRect(sb.x-cameraX, sb.y, sb.w, sb.h);
-            ctx.fillStyle = "#FFDD88";
-            ctx.fillRect(sb.x-cameraX+6, sb.y-4, sb.w-12, 5);
-        }
-        for(let mp of movingPlatforms) {
-            ctx.fillStyle = "#77AAFF";
-            ctx.fillRect(mp.x-cameraX, mp.y, mp.w, mp.h);
-            ctx.fillStyle = "#AADDFF";
-            ctx.fillRect(mp.x-cameraX+4, mp.y-4, mp.w-8, 6);
-        }
-        ctx.shadowBlur = 0;
-    }
-    
-    function drawPlayer() {
-        ctx.save();
-        ctx.translate(player.x - cameraX + player.w/2, player.y + player.h/2);
-        if(!player.facingRight) ctx.scale(-1, 1);
-        ctx.fillStyle = "#FFD8A0";
-        ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
-        ctx.fillStyle = "#F0A87A";
-        ctx.fillRect(-player.w/2+8, -player.h/2-6, player.w-16, 10);
-        ctx.fillStyle = "#4A2A1A";
-        ctx.fillRect(-player.w/2+12, -player.h/2+12, 8, 8);
-        ctx.fillRect(-player.w/2+32, -player.h/2+12, 8, 8);
-        ctx.fillStyle = "#E08040";
-        ctx.beginPath();
-        ctx.ellipse(-player.w/2+26, -player.h/2+30, 8, 12, 0, 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-    }
-    
-    function drawUI() {
-        ctx.fillStyle = "rgba(10,10,40,0.8)";
-        ctx.fillRect(18, 65, 210, 52);
-        ctx.fillStyle = "#FFD966";
-        ctx.font = "30px monospace";
-        ctx.fillText("⭐", 38, 105);
-        ctx.fillStyle = "white";
-        ctx.font = "bold 28px monospace";
-        ctx.fillText(Math.floor(score), 92, 105);
-        
-        ctx.fillStyle = "rgba(10,10,40,0.8)";
-        ctx.fillRect(LOGIC_W-228, 65, 210, 52);
-        ctx.fillStyle = "#FFD966";
-        ctx.fillText("🏆", LOGIC_W-200, 105);
-        ctx.fillStyle = "white";
-        ctx.fillText(highScore, LOGIC_W-150, 105);
-    }
-    
-    let lastTimestamp = 0;
-    function updateGame() {
-        if(!gameRunning) return;
-        updateBuffs();
-        updatePhysics();
-        checkCollisions();
-        updateCamera();
-        updateMovingPlatforms();
-        updateGeneration();
-        cleanOldObjects();
-        updateItemTimersDisplay();
-    }
-    
-    function gameLoop() {
-        ctx.clearRect(0, 0, LOGIC_W, LOGIC_H);
-        updateGame();
-        let shook = applyShake();
-        drawStyledBackground();
-        drawGround();
-        drawGuideLines();
-        drawObjects();
-        drawPlayer();
-        drawUI();
-        if(shook) restoreShake();
-        requestAnimationFrame(gameLoop);
-    }
-    
-    function initAudio() { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
-    musicToggleBtn.addEventListener('click', () => {
-        musicMuted = !musicMuted;
-        if(bgMusic) bgMusic.muted = musicMuted;
-        musicToggleBtn.textContent = musicMuted ? "🔇" : "🔊";
-        playSound('button', 0.05);
-    });
-    
-    function resizeCanvas() { canvas.width = LOGIC_W; canvas.height = LOGIC_H; }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-    
-    // 启动
-    let fakeLoad = setTimeout(() => {
-        loadingOverlay.style.display = 'none';
-        startOverlay.style.display = 'flex';
-        resourcesLoaded = true;
-    }, 500);
-    
-    startBtn.addEventListener('click', () => {
-        if(!resourcesLoaded) return;
-        initAudio();
-        initBackgroundMusic();
-        fullReset();
-        startOverlay.style.display = 'none';
-        bottomControls.style.display = 'flex';
-        gameRunning = true;
-        if(bgMusic && !musicMuted) bgMusic.play().catch(e=>{});
-    });
-    restartBtn.addEventListener('click', () => {
-        fullReset();
-        deathOverlay.style.display = 'none';
-        bottomControls.style.display = 'flex';
-        gameRunning = true;
-        if(bgMusic && !musicMuted) bgMusic.play().catch(e=>{});
-    });
-    
     generateInitialChunks();
     gameLoop();
 })();
